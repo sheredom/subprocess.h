@@ -115,6 +115,15 @@ Note that you can destroy a process before it has completed execution - this
 allows you to spawn a process that would outlive the execution of the parent
 process for instance.
 
+## Todo ##
+
+The current list of todos:
+
+* Add the ability to [set environment variables of the child process](https://github.com/sheredom/process.h/issues/1)
+  as suggested by [@graphitemaster](https://github.com/graphitemaster).
+* Add the ability to specify if a child process should die if the parent process
+  is terminated.
+
 ## License ##
 
 This is free and unencumbered software released into the public domain.
