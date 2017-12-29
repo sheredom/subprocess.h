@@ -149,12 +149,18 @@ struct process_s {
 #pragma clang diagnostic pop
 #endif
 
+enum process_option_e {
+  // stdout and stderr are the same FILE.
+  process_option_combined_stdout_stderr = 0x1
+};
+
 /// @brief Create a process.
 /// @param command_line An array of strings for the command line to execute for
 /// this process. The last element must be NULL to signify the end of the array.
+/// @param options A bit field of process_option_e's to pass.
 /// @param out_process The newly created process.
 /// @return On success 0 is returned.
-process_weak int process_create(const char *const command_line[],
+process_weak int process_create(const char *const command_line[], int options,
                                 struct process_s *const out_process);
 
 /// @brief Get the standard input file for a process.
@@ -170,8 +176,8 @@ process_stdin(const struct process_s *const process);
 /// @param process The process to query.
 /// @return The file for standard output of the process.
 ///
-/// The file returned can be written to by the parent process to read data to
-/// the standard output of the process.
+/// The file returned can be read from by the parent process to read data from
+/// the standard output of the child process.
 process_pure process_weak FILE *
 process_stdout(const struct process_s *const process);
 
@@ -179,8 +185,12 @@ process_stdout(const struct process_s *const process);
 /// @param process The process to query.
 /// @return The file for standard error of the process.
 ///
-/// The file returned can be written to by the parent process to read data to
-/// the standard error of the process.
+/// The file returned can be read from by the parent process to read data from
+/// the standard error of the child process.
+///
+/// If the process was created with the process_option_combined_stdout_stderr
+/// option bit set, this function will return NULL, and the process_stdout
+/// function should be used for both the standard output and error combined.
 process_pure process_weak FILE *
 process_stderr(const struct process_s *const process);
 
@@ -199,7 +209,7 @@ process_weak int process_join(struct process_s *const process,
 /// the parent process.
 process_weak int process_destroy(struct process_s *const process);
 
-int process_create(const char *const commandLine[],
+int process_create(const char *const commandLine[], int options,
                    struct process_s *const out_process) {
 #if defined(_MSC_VER)
   int fd;
@@ -214,6 +224,7 @@ int process_create(const char *const commandLine[],
   struct process_startup_info_s startInfo = {0, 0, 0, 0, 0, 0, 0, 0, 0,
                                              0, 0, 0, 0, 0, 0, 0, 0, 0};
 
+  startInfo.cb = sizeof(startInfo);
   startInfo.dwFlags = startFUseStdHandles;
 
   if (!CreatePipe(&rd, &wr, (LPSECURITY_ATTRIBUTES)&saAttr, 0)) {
@@ -256,25 +267,31 @@ int process_create(const char *const commandLine[],
 
   startInfo.hStdOutput = wr;
 
-  if (!CreatePipe(&rd, &wr, (LPSECURITY_ATTRIBUTES)&saAttr, 0)) {
-    return -1;
-  }
-
-  if (!SetHandleInformation(rd, handleFlagInherit, 0)) {
-    return -1;
-  }
-
-  fd = _open_osfhandle((intptr_t)rd, 0);
-
-  if (-1 != fd) {
-    out_process->stderr_file = _fdopen(fd, "rb");
-
-    if (0 == out_process->stderr_file) {
+  if (process_option_combined_stdout_stderr ==
+      (options & process_option_combined_stdout_stderr)) {
+    out_process->stderr_file = out_process->stdout_file;
+    startInfo.hStdError = startInfo.hStdOutput;
+  } else {
+    if (!CreatePipe(&rd, &wr, (LPSECURITY_ATTRIBUTES)&saAttr, 0)) {
       return -1;
     }
-  }
 
-  startInfo.hStdError = wr;
+    if (!SetHandleInformation(rd, handleFlagInherit, 0)) {
+      return -1;
+    }
+
+    fd = _open_osfhandle((intptr_t)rd, 0);
+
+    if (-1 != fd) {
+      out_process->stderr_file = _fdopen(fd, "rb");
+
+      if (0 == out_process->stderr_file) {
+        return -1;
+      }
+    }
+
+    startInfo.hStdError = wr;
+  }
 
   // Combine commandLine together into a single string
   len = 0;
@@ -341,8 +358,11 @@ int process_create(const char *const commandLine[],
     return -1;
   }
 
-  if (0 != pipe(stderrfd)) {
-    return -1;
+  if (process_option_combined_stdout_stderr !=
+      (options & process_option_combined_stdout_stderr)) {
+    if (0 != pipe(stderrfd)) {
+      return -1;
+    }
   }
 
   child = fork();
@@ -362,10 +382,15 @@ int process_create(const char *const commandLine[],
     // Map the write end to stdout
     dup2(stdoutfd[1], STDOUT_FILENO);
 
-    // Close the stderr read end
-    close(stderrfd[0]);
-    // Map the write end to stdout
-    dup2(stderrfd[1], STDERR_FILENO);
+    if (process_option_combined_stdout_stderr ==
+        (options & process_option_combined_stdout_stderr)) {
+      dup2(STDOUT_FILENO, STDERR_FILENO);
+    } else {
+      // Close the stderr read end
+      close(stderrfd[0]);
+      // Map the write end to stdout
+      dup2(stderrfd[1], STDERR_FILENO);
+    }
 
 #ifdef __clang__
 #pragma clang diagnostic push
@@ -387,10 +412,15 @@ int process_create(const char *const commandLine[],
     // Store the stdout read end
     out_process->stdout_file = fdopen(stdoutfd[0], "rb");
 
-    // Close the stderr write end
-    close(stderrfd[1]);
-    // Store the stderr read end
-    out_process->stderr_file = fdopen(stderrfd[0], "rb");
+    if (process_option_combined_stdout_stderr ==
+        (options & process_option_combined_stdout_stderr)) {
+      out_process->stderr_file = out_process->stdout_file;
+    } else {
+      // Close the stderr write end
+      close(stderrfd[1]);
+      // Store the stderr read end
+      out_process->stderr_file = fdopen(stderrfd[0], "rb");
+    }
 
     // Store the child's pid
     out_process->child = child;
@@ -409,7 +439,11 @@ FILE *process_stdout(const struct process_s *const process) {
 }
 
 FILE *process_stderr(const struct process_s *const process) {
-  return process->stderr_file;
+  if (process->stdout_file != process->stderr_file) {
+    return process->stderr_file;
+  } else {
+    return 0;
+  }
 }
 
 int process_join(struct process_s *const process, int *const out_return_code) {
@@ -461,7 +495,10 @@ int process_destroy(struct process_s *const process) {
   }
 
   fclose(process->stdout_file);
-  fclose(process->stderr_file);
+
+  if (process->stdout_file != process->stderr_file) {
+    fclose(process->stderr_file);
+  }
 
 #if defined(_MSC_VER)
   CloseHandle(process->hProcess);
