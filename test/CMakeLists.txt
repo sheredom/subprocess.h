@@ -38,6 +38,7 @@ add_executable(process_stdout_argc process_stdout_argc.c)
 add_executable(process_stdout_argv process_stdout_argv.c)
 add_executable(process_stderr_argc process_stderr_argc.c)
 add_executable(process_stderr_argv process_stderr_argv.c)
+add_executable(process_combined_stdout_stderr process_combined_stdout_stderr.c)
 
 add_executable(process_test
   ../process.h

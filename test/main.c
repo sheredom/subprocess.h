@@ -32,7 +32,7 @@ UTEST(create, process_return_zero) {
   struct process_s process;
   int ret = -1;
 
-  ASSERT_EQ(0, process_create(commandLine, &process));
+  ASSERT_EQ(0, process_create(commandLine, 0, &process));
 
   ASSERT_EQ(0, process_join(&process, &ret));
 
@@ -46,7 +46,7 @@ UTEST(create, process_return_fortytwo) {
   struct process_s process;
   int ret = -1;
 
-  ASSERT_EQ(0, process_create(commandLine, &process));
+  ASSERT_EQ(0, process_create(commandLine, 0, &process));
 
   ASSERT_EQ(0, process_join(&process, &ret));
 
@@ -56,12 +56,12 @@ UTEST(create, process_return_fortytwo) {
 }
 
 UTEST(create, process_return_argc) {
-  const char *const commandLine[] = {
-      "./process_return_argc", "foo", "bar", "baz", "faz", 0};
+  const char *const commandLine[] = {"./process_return_argc", "foo",
+                                     "bar", "baz", "faz", 0};
   struct process_s process;
   int ret = -1;
 
-  ASSERT_EQ(0, process_create(commandLine, &process));
+  ASSERT_EQ(0, process_create(commandLine, 0, &process));
 
   ASSERT_EQ(0, process_join(&process, &ret));
 
@@ -75,7 +75,7 @@ UTEST(create, process_return_argv) {
   struct process_s process;
   int ret = -1;
 
-  ASSERT_EQ(0, process_create(commandLine, &process));
+  ASSERT_EQ(0, process_create(commandLine, 0, &process));
 
   ASSERT_EQ(0, process_join(&process, &ret));
 
@@ -90,7 +90,7 @@ UTEST(create, process_return_stdin) {
   int ret = -1;
   FILE *stdin_file;
 
-  ASSERT_EQ(0, process_create(commandLine, &process));
+  ASSERT_EQ(0, process_create(commandLine, 0, &process));
 
   stdin_file = process_stdin(&process);
   ASSERT_TRUE(stdin_file);
@@ -125,7 +125,7 @@ UTEST(create, process_return_stdin_count) {
   FILE *stdin_file;
   const char temp[41] = "Wee, sleekit, cow'rin, tim'rous beastie!";
 
-  ASSERT_EQ(0, process_create(commandLine, &process));
+  ASSERT_EQ(0, process_create(commandLine, 0, &process));
 
   stdin_file = process_stdin(&process);
   ASSERT_TRUE(stdin_file);
@@ -147,7 +147,7 @@ UTEST(create, process_stdout_argc) {
   FILE *stdout_file;
   char temp[32];
 
-  ASSERT_EQ(0, process_create(commandLine, &process));
+  ASSERT_EQ(0, process_create(commandLine, 0, &process));
 
   ASSERT_EQ(0, process_join(&process, &ret));
 
@@ -172,7 +172,7 @@ UTEST(create, process_stdout_argv) {
   char temp[16];
   const char compare[16] = "foo bar baz faz";
 
-  ASSERT_EQ(0, process_create(commandLine, &process));
+  ASSERT_EQ(0, process_create(commandLine, 0, &process));
 
   ASSERT_EQ(0, process_join(&process, &ret));
 
@@ -196,7 +196,7 @@ UTEST(create, process_stderr_argc) {
   FILE *stderr_file;
   char temp[32];
 
-  ASSERT_EQ(0, process_create(commandLine, &process));
+  ASSERT_EQ(0, process_create(commandLine, 0, &process));
 
   ASSERT_EQ(0, process_join(&process, &ret));
 
@@ -221,7 +221,7 @@ UTEST(create, process_stderr_argv) {
   char temp[16];
   const char compare[16] = "foo bar baz faz";
 
-  ASSERT_EQ(0, process_create(commandLine, &process));
+  ASSERT_EQ(0, process_create(commandLine, 0, &process));
 
   ASSERT_EQ(0, process_join(&process, &ret));
 
@@ -233,6 +233,35 @@ UTEST(create, process_stderr_argv) {
   ASSERT_TRUE(fgets(temp, 16, stderr_file));
 
   ASSERT_STREQ(temp, compare);
+
+  ASSERT_EQ(0, process_destroy(&process));
+}
+
+UTEST(create, process_combined_stdout_stderr) {
+  const char *const commandLine[] = {"./process_combined_stdout_stderr", 0};
+  struct process_s process;
+  int ret = -1;
+  FILE *stdout_file;
+  FILE *stderr_file;
+  char temp[25];
+  const char compare[25] = "Hello,It's me!world!Yay!";
+
+  ASSERT_EQ(0, process_create(commandLine,
+                              process_option_combined_stdout_stderr, &process));
+
+  ASSERT_EQ(0, process_join(&process, &ret));
+
+  ASSERT_EQ(0, ret);
+
+  stdout_file = process_stdout(&process);
+  ASSERT_TRUE(stdout_file);
+
+  stderr_file = process_stderr(&process);
+  ASSERT_FALSE(stderr_file);
+
+  ASSERT_TRUE(fgets(temp, 25, stdout_file));
+
+  ASSERT_STREQ(compare, temp);
 
   ASSERT_EQ(0, process_destroy(&process));
 }
