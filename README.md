@@ -26,9 +26,9 @@ for the process to complete.
 To launch a process you call `process_create` like so:
 
 ```c
-const char command_line[] = {"echo", "\"Hello, world!\"", NULL};
+const char *command_line[] = {"echo", "\"Hello, world!\"", NULL};
 struct process_s process;
-int result = process_create(command_line, &process);
+int result = process_create(command_line, 0, &process);
 if (0 != result) {
   // an error occurred!
 }
