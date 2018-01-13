@@ -151,7 +151,10 @@ struct process_s {
 
 enum process_option_e {
   // stdout and stderr are the same FILE.
-  process_option_combined_stdout_stderr = 0x1
+  process_option_combined_stdout_stderr = 0x1,
+
+  // The child process should inherit the environment variables of the parent.
+  process_option_inherit_environment = 0x2
 };
 
 /// @brief Create a process.
@@ -221,11 +224,17 @@ int process_create(const char *const commandLine[], int options,
   const unsigned long handleFlagInherit = 0x00000001;
   struct process_process_information_s processInfo;
   struct process_security_attributes_s saAttr = {sizeof(saAttr), 0, 1};
+  char *environment = 0;
   struct process_startup_info_s startInfo = {0, 0, 0, 0, 0, 0, 0, 0, 0,
                                              0, 0, 0, 0, 0, 0, 0, 0, 0};
 
   startInfo.cb = sizeof(startInfo);
   startInfo.dwFlags = startFUseStdHandles;
+
+  if (process_option_inherit_environment !=
+      (options & process_option_inherit_environment)) {
+    environment = "\0\0";
+  }
 
   if (!CreatePipe(&rd, &wr, (LPSECURITY_ATTRIBUTES)&saAttr, 0)) {
     return -1;
@@ -331,7 +340,7 @@ int process_create(const char *const commandLine[], int options,
                       NULL,                // primary thread security attributes
                       1,                   // handles are inherited
                       0,                   // creation flags
-                      NULL,                // use parent's environment
+                      environment,         // use parent's environment
                       NULL,                // use parent's current directory
                       (LPSTARTUPINFOA)&startInfo, // STARTUPINFO pointer
                       (LPPROCESS_INFORMATION)&processInfo)) {
@@ -397,7 +406,13 @@ int process_create(const char *const commandLine[], int options,
 #pragma clang diagnostic ignored "-Wcast-qual"
 #pragma clang diagnostic ignored "-Wold-style-cast"
 #endif
-    exit(execvp(commandLine[0], (char *const *)commandLine));
+    if (process_option_inherit_environment !=
+        (options & process_option_inherit_environment)) {
+      char *const environment[1] = {0};
+      exit(execve(commandLine[0], (char *const *)commandLine, environment));
+    } else {
+      exit(execvp(commandLine[0], (char *const *)commandLine));
+    }
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif

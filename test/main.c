@@ -266,4 +266,86 @@ UTEST(create, process_combined_stdout_stderr) {
   ASSERT_EQ(0, process_destroy(&process));
 }
 
+UTEST(create, process_not_inherit_environment) {
+  const char *const commandLine[] = {"./process_inherit_environment", 0};
+  struct process_s process;
+  int ret = -1;
+
+#ifdef _MSC_VER
+  ASSERT_TRUE(SetEnvironmentVariable("PROCESS_ENV_TEST", "1"));
+#else
+  ASSERT_FALSE(putenv("PROCESS_ENV_TEST=1"));
+#endif
+
+  ASSERT_EQ(0, process_create(commandLine, 0, &process));
+
+  ASSERT_EQ(0, process_join(&process, &ret));
+
+  ASSERT_EQ(0, ret);
+
+  ASSERT_EQ(0, process_destroy(&process));
+}
+
+UTEST(create, process_inherit_environment) {
+  const char *const commandLine[] = {"./process_inherit_environment", 0};
+  struct process_s process;
+  int ret = -1;
+
+#ifdef _MSC_VER
+  ASSERT_TRUE(SetEnvironmentVariable("PROCESS_ENV_TEST", "42"));
+#else
+  ASSERT_FALSE(putenv("PROCESS_ENV_TEST=42"));
+#endif
+
+  ASSERT_EQ(0, process_create(commandLine, process_option_inherit_environment,
+                              &process));
+
+  ASSERT_EQ(0, process_join(&process, &ret));
+
+  ASSERT_EQ(42, ret);
+
+  ASSERT_EQ(0, process_destroy(&process));
+}
+
+UTEST(create, process_not_inherit_all_environment) {
+  const char *const commandLine[] = {"./process_inherit_environment", "all", 0};
+  struct process_s process;
+  int ret = -1;
+
+#ifdef _MSC_VER
+  ASSERT_TRUE(SetEnvironmentVariable("PROCESS_ENV_TEST", "42"));
+#else
+  ASSERT_FALSE(putenv("PROCESS_ENV_TEST=42"));
+#endif
+
+  ASSERT_EQ(0, process_create(commandLine, 0, &process));
+
+  ASSERT_EQ(0, process_join(&process, &ret));
+
+  ASSERT_EQ(0, ret);
+
+  ASSERT_EQ(0, process_destroy(&process));
+}
+
+UTEST(create, process_inherit_all_environment) {
+  const char *const commandLine[] = {"./process_inherit_environment", "all", 0};
+  struct process_s process;
+  int ret = -1;
+
+#ifdef _MSC_VER
+  ASSERT_TRUE(SetEnvironmentVariable("PROCESS_ENV_TEST", "42"));
+#else
+  ASSERT_FALSE(putenv("PROCESS_ENV_TEST=42"));
+#endif
+
+  ASSERT_EQ(0, process_create(commandLine, process_option_inherit_environment,
+                              &process));
+
+  ASSERT_EQ(0, process_join(&process, &ret));
+
+  ASSERT_EQ(1, ret);
+
+  ASSERT_EQ(0, process_destroy(&process));
+}
+
 UTEST_MAIN()
