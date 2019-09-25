@@ -59,7 +59,7 @@ elseif("${CMAKE_C_COMPILER_ID}" STREQUAL "Clang")
   )
 elseif("${CMAKE_C_COMPILER_ID}" STREQUAL "MSVC")
   set_source_files_properties(main.c test.c PROPERTIES
-    COMPILE_FLAGS "/Wall /WX /wd4514"
+    COMPILE_FLAGS "/Wall /WX /wd4514 /wd5045"
   )
 else()
   message(WARNING "Unknown compiler '${CMAKE_C_COMPILER_ID}'!")
@@ -75,7 +75,7 @@ elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
   )
 elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
   set_source_files_properties(test.cpp PROPERTIES
-    COMPILE_FLAGS "/Wall /WX /wd4514"
+    COMPILE_FLAGS "/Wall /WX /wd4514 /wd5045"
   )
 else()
   message(WARNING "Unknown compiler '${CMAKE_C_COMPILER_ID}'!")
