@@ -141,6 +141,9 @@ struct process_s {
 
 #if defined(_MSC_VER)
   void *hProcess;
+  void *hStdInput;
+  void *hStdOutput;
+  void *hStdError;
 #else
   pid_t child;
 #endif
@@ -349,6 +352,10 @@ int process_create(const char *const commandLine[], int options,
 
   out_process->hProcess = processInfo.hProcess;
 
+  out_process->hStdInput = startInfo.hStdInput;
+  out_process->hStdOutput = startInfo.hStdOutput;
+  out_process->hStdError = startInfo.hStdError;
+
   // We don't need the handle of the primary thread in the called process.
   CloseHandle(processInfo.hThread);
 
@@ -469,8 +476,24 @@ int process_join(struct process_s *const process, int *const out_return_code) {
     fclose(process->stdin_file);
     process->stdin_file = 0;
   }
+  if (0 != process->hStdInput) {
+    CloseHandle(process->hStdInput);
+    process->hStdInput = NULL;
+  }
 
   WaitForSingleObject(process->hProcess, infinite);
+
+  if (0 != process->hStdOutput) {
+    CloseHandle(process->hStdOutput);
+    if (process->hStdError == process->hStdOutput) {
+      process->hStdError = NULL;
+    }
+    process->hStdOutput = NULL;
+  }
+  if (0 != process->hStdError) {
+    CloseHandle(process->hStdError);
+    process->hStdError = NULL;
+  }
 
   if (out_return_code) {
     if (!GetExitCodeProcess(process->hProcess,
@@ -517,6 +540,22 @@ int process_destroy(struct process_s *const process) {
 
 #if defined(_MSC_VER)
   CloseHandle(process->hProcess);
+
+  if (0 != process->hStdInput) {
+    CloseHandle(process->hStdInput);
+    process->hStdInput = NULL;
+  }
+  if (0 != process->hStdOutput) {
+    CloseHandle(process->hStdOutput);
+    if (process->hStdError == process->hStdOutput) {
+      process->hStdError = NULL;
+    }
+    process->hStdOutput = NULL;
+  }
+  if (0 != process->hStdError) {
+    CloseHandle(process->hStdError);
+    process->hStdError = NULL;
+  }
 #endif
 
   return 0;
