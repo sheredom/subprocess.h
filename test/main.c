@@ -185,6 +185,10 @@ UTEST(create, process_stdout_argv) {
 
   ASSERT_STREQ(temp, compare);
 
+  ASSERT_TRUE(fgets(temp, 16, stdout_file)); // should contain trailing newline character(s)
+  ASSERT_FALSE(fgets(temp, 16, stdout_file)); // should be at EOF now
+  ASSERT_TRUE(feof(stdout_file));
+
   ASSERT_EQ(0, process_destroy(&process));
 }
 
@@ -233,6 +237,10 @@ UTEST(create, process_stderr_argv) {
   ASSERT_TRUE(fgets(temp, 16, stderr_file));
 
   ASSERT_STREQ(temp, compare);
+
+  ASSERT_TRUE(fgets(temp, 16, stderr_file)); // should contain trailing newline character(s)
+  ASSERT_FALSE(fgets(temp, 16, stderr_file)); // should be at EOF now
+  ASSERT_TRUE(feof(stderr_file));
 
   ASSERT_EQ(0, process_destroy(&process));
 }
