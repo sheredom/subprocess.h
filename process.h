@@ -52,6 +52,7 @@ extern "C" {
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <string.h>
 #endif
 
 #if defined(_MSC_VER)
@@ -157,7 +158,10 @@ enum process_option_e {
   process_option_combined_stdout_stderr = 0x1,
 
   // The child process should inherit the environment variables of the parent.
-  process_option_inherit_environment = 0x2
+  process_option_inherit_environment = 0x2,
+  
+  // The child process will be detached from parent and may live longer.
+  process_option_child_detached = 0x4
 };
 
 /// @brief Create a process.
@@ -337,25 +341,34 @@ int process_create(const char *const commandLine[], int options,
 
   commandLineCombined[len] = '\0';
 
+  unsigned long flags = 0x0;
+  if (process_option_child_detached ==
+      (options & process_option_child_detached)) {
+    flags |= 0x00000008; /* DETACHED_PROCESS */
+  }
   if (!CreateProcessA(NULL,
                       commandLineCombined, // command line
                       NULL,                // process security attributes
                       NULL,                // primary thread security attributes
                       1,                   // handles are inherited
-                      0,                   // creation flags
+                      flags,               // creation flags
                       environment,         // use parent's environment
                       NULL,                // use parent's current directory
                       (LPSTARTUPINFOA)&startInfo, // STARTUPINFO pointer
                       (LPPROCESS_INFORMATION)&processInfo)) {
     return -1;
   }
+  if (!(process_option_child_detached ==
+      (options & process_option_child_detached))) {
+    out_process->hProcess = processInfo.hProcess;
 
-  out_process->hProcess = processInfo.hProcess;
-
-  out_process->hStdInput = startInfo.hStdInput;
-  out_process->hStdOutput = startInfo.hStdOutput;
-  out_process->hStdError = startInfo.hStdError;
-
+    out_process->hStdInput = startInfo.hStdInput;
+    out_process->hStdOutput = startInfo.hStdOutput;
+    out_process->hStdError = startInfo.hStdError;
+  } else {
+    CloseHandle(processInfo.hProcess);
+  }
+  
   // We don't need the handle of the primary thread in the called process.
   CloseHandle(processInfo.hThread);
 
@@ -388,6 +401,14 @@ int process_create(const char *const commandLine[], int options,
   }
 
   if (0 == child) {
+    if (process_option_child_detached ==
+        (options & process_option_child_detached)) {
+      struct sigaction noaction;
+      memset(&noaction, 0, sizeof(noaction));
+      noaction.sa_handler = SIG_IGN;
+      sigaction(SIGPIPE, &noaction, 0);
+      setsid();
+    }
     // Close the stdin write end
     close(stdinfd[1]);
     // Map the read end to stdin
@@ -413,13 +434,22 @@ int process_create(const char *const commandLine[], int options,
 #pragma clang diagnostic ignored "-Wcast-qual"
 #pragma clang diagnostic ignored "-Wold-style-cast"
 #endif
+    int r;
     if (process_option_inherit_environment !=
         (options & process_option_inherit_environment)) {
       char *const environment[1] = {0};
-      exit(execve(commandLine[0], (char *const *)commandLine, environment));
+      r = execve(commandLine[0], (char *const *)commandLine, environment);
     } else {
-      exit(execvp(commandLine[0], (char *const *)commandLine));
+      r = execvp(commandLine[0], (char *const *)commandLine);
     }
+    if (process_option_child_detached ==
+        (options & process_option_child_detached)) {
+      struct sigaction noaction;
+      memset(&noaction, 0, sizeof(noaction));
+      noaction.sa_handler = SIG_IGN;
+      sigaction(SIGPIPE, &noaction, 0);
+    }
+    exit(r);
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
