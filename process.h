@@ -33,10 +33,6 @@
 #ifndef SHEREDOM_PROCESS_H_INCLUDED
 #define SHEREDOM_PROCESS_H_INCLUDED
 
-#if defined(__cplusplus)
-extern "C" {
-#endif
-
 #if defined(_MSC_VER)
 #pragma warning(push, 1)
 #endif
@@ -45,6 +41,91 @@ extern "C" {
 
 #if defined(_MSC_VER)
 #pragma warning(pop)
+#endif
+
+#if defined(__clang__) || defined(__GNUC__)
+#define process_pure __attribute__((pure))
+#define process_weak __attribute__((weak))
+#elif defined(_MSC_VER)
+#define process_pure
+#define process_weak __inline
+#else
+#error Non clang, non gcc, non MSVC compiler found!
+#endif
+
+struct process_s;
+
+enum process_option_e {
+  // stdout and stderr are the same FILE.
+  process_option_combined_stdout_stderr = 0x1,
+
+  // The child process should inherit the environment variables of the parent.
+  process_option_inherit_environment = 0x2
+};
+
+#if defined(__cplusplus)
+extern "C" {
+#endif
+
+/// @brief Create a process.
+/// @param command_line An array of strings for the command line to execute for
+/// this process. The last element must be NULL to signify the end of the array.
+/// @param options A bit field of process_option_e's to pass.
+/// @param out_process The newly created process.
+/// @return On success 0 is returned.
+process_weak int process_create(const char *const command_line[], int options,
+                                struct process_s *const out_process);
+
+/// @brief Get the standard input file for a process.
+/// @param process The process to query.
+/// @return The file for standard input of the process.
+///
+/// The file returned can be written to by the parent process to feed data to
+/// the standard input of the process.
+process_pure process_weak FILE *
+process_stdin(const struct process_s *const process);
+
+/// @brief Get the standard output file for a process.
+/// @param process The process to query.
+/// @return The file for standard output of the process.
+///
+/// The file returned can be read from by the parent process to read data from
+/// the standard output of the child process.
+process_pure process_weak FILE *
+process_stdout(const struct process_s *const process);
+
+/// @brief Get the standard error file for a process.
+/// @param process The process to query.
+/// @return The file for standard error of the process.
+///
+/// The file returned can be read from by the parent process to read data from
+/// the standard error of the child process.
+///
+/// If the process was created with the process_option_combined_stdout_stderr
+/// option bit set, this function will return NULL, and the process_stdout
+/// function should be used for both the standard output and error combined.
+process_pure process_weak FILE *
+process_stderr(const struct process_s *const process);
+
+/// @brief Wait for a process to finish execution.
+/// @param process The process to wait for.
+/// @param out_return_code The return code of the returned process (can be
+/// NULL).
+/// @return On success 0 is returned.
+///
+/// Joining a process will close the stdin pipe to the process.
+process_weak int process_join(struct process_s *const process,
+                              int *const out_return_code);
+
+/// @brief Destroy a previously created process.
+/// @param process The process to destroy.
+///
+/// If the process to be destroyed had not finished execution, it may out live
+/// the parent process.
+process_weak int process_destroy(struct process_s *const process);
+
+#if defined(__cplusplus)
+} // extern "C"
 #endif
 
 #if !defined(_MSC_VER)
@@ -120,16 +201,6 @@ __declspec(dllimport) int __cdecl _open_osfhandle(intptr_t, int);
 void *__cdecl _alloca(size_t);
 #endif
 
-#if defined(__clang__) || defined(__GNUC__)
-#define process_pure __attribute__((pure))
-#define process_weak __attribute__((weak))
-#elif defined(_MSC_VER)
-#define process_pure
-#define process_weak __inline
-#else
-#error Non clang, non gcc, non MSVC compiler found!
-#endif
-
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wpadded"
@@ -151,69 +222,6 @@ struct process_s {
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
-
-enum process_option_e {
-  // stdout and stderr are the same FILE.
-  process_option_combined_stdout_stderr = 0x1,
-
-  // The child process should inherit the environment variables of the parent.
-  process_option_inherit_environment = 0x2
-};
-
-/// @brief Create a process.
-/// @param command_line An array of strings for the command line to execute for
-/// this process. The last element must be NULL to signify the end of the array.
-/// @param options A bit field of process_option_e's to pass.
-/// @param out_process The newly created process.
-/// @return On success 0 is returned.
-process_weak int process_create(const char *const command_line[], int options,
-                                struct process_s *const out_process);
-
-/// @brief Get the standard input file for a process.
-/// @param process The process to query.
-/// @return The file for standard input of the process.
-///
-/// The file returned can be written to by the parent process to feed data to
-/// the standard input of the process.
-process_pure process_weak FILE *
-process_stdin(const struct process_s *const process);
-
-/// @brief Get the standard output file for a process.
-/// @param process The process to query.
-/// @return The file for standard output of the process.
-///
-/// The file returned can be read from by the parent process to read data from
-/// the standard output of the child process.
-process_pure process_weak FILE *
-process_stdout(const struct process_s *const process);
-
-/// @brief Get the standard error file for a process.
-/// @param process The process to query.
-/// @return The file for standard error of the process.
-///
-/// The file returned can be read from by the parent process to read data from
-/// the standard error of the child process.
-///
-/// If the process was created with the process_option_combined_stdout_stderr
-/// option bit set, this function will return NULL, and the process_stdout
-/// function should be used for both the standard output and error combined.
-process_pure process_weak FILE *
-process_stderr(const struct process_s *const process);
-
-/// @brief Wait for a process to finish execution.
-/// @param process The process to wait for.
-/// @param out_return_code The return code of the returned process (can be
-/// NULL).
-/// @return On success 0 is returned.
-process_weak int process_join(struct process_s *const process,
-                              int *const out_return_code);
-
-/// @brief Destroy a previously created process.
-/// @param process The process to destroy.
-///
-/// If the process to be destroyed had not finished execution, it may out live
-/// the parent process.
-process_weak int process_destroy(struct process_s *const process);
 
 int process_create(const char *const commandLine[], int options,
                    struct process_s *const out_process) {
@@ -560,9 +568,5 @@ int process_destroy(struct process_s *const process) {
 
   return 0;
 }
-
-#if defined(__cplusplus)
-} // extern "C"
-#endif
 
 #endif /* SHEREDOM_PROCESS_H_INCLUDED */

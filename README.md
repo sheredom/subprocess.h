@@ -1,27 +1,26 @@
-# process.h #
+# 🐜 process.h
 
 [![Build status](https://ci.appveyor.com/api/projects/status/0sm37thiavt9juee?svg=true)](https://ci.appveyor.com/project/sheredom/process-h)
-
 [![Build Status](https://travis-ci.org/sheredom/process.h.svg)](https://travis-ci.org/sheredom/process.h)
 
 A simple one header solution to launching processes and interacting with them
 for C/C++.
 
-## Usage ##
+## Usage
 
-Just include process.h in your code!
+Just `#include "process.h"` in your code!
 
 The current supported compilers are gcc, clang and msvc.
 
-The current supported platforms are Linux, Mac OSX and Windows.
+The current supported platforms are Linux, macOS and Windows.
 
-## Design ##
+## Design
 
 Process is a single header cross-platform library that allows users to launch
 processes, interact with the stdin, stdout, and stderr of the process, and wait
 for the process to complete.
 
-### Launching a Process ###
+### Launching a Process
 
 To launch a process you call `process_create` like so:
 
@@ -39,7 +38,7 @@ a `NULL` element.
 
 If the process is created successfully then 0 is returned from `process_create`.
 
-### Writing to the Standard Input of a Process ###
+### Writing to the Standard Input of a Process
 
 To write to the standard input of a child process you call `process_stdin` to
 get the FILE handle to write with, passing a previously created process, like
@@ -53,7 +52,7 @@ fputs("Hello, world!", p_stdin);
 Care must be taken to not write to the stdin after any call to `process_join` or
 `process_destroy`.
 
-### Reading from the Standard Output of a Process ###
+### Reading from the Standard Output of a Process
 
 To read from the standard output of a child process you call `process_stdout` to
 get the FILE handle to read with, passing a previously created process, like
@@ -68,7 +67,7 @@ fgets(hello_world, 32, p_stdout);
 Care must be taken to not read from the stdout after any call to 
 `process_destroy`.
 
-### Reading from the Standard Error of a Process ###
+### Reading from the Standard Error of a Process
 
 To read from the standard error of a child process you call `process_stderr` to
 get the FILE handle to read with, passing a previously created process, like
@@ -83,7 +82,7 @@ fgets(hello_world, 32, p_stderr);
 Care must be taken to not read from the stderr after any call to 
 `process_destroy`.
 
-### Waiting on a Process ###
+### Waiting on a Process
 
 To wait for a previously created process to finish executing you call
 `process_join` like so:
@@ -100,7 +99,7 @@ The return code of the child process is returned in the second argument (stored
 into `process_return` in the example above). This parameter can be `NULL` if you
 don't care about the process' return code.
 
-### Destroying a Process ###
+### Destroying a Process
 
 To destroy a previously created process you call `process_destroy` like so:
 
@@ -115,7 +114,7 @@ Note that you can destroy a process before it has completed execution - this
 allows you to spawn a process that would outlive the execution of the parent
 process for instance.
 
-## Todo ##
+## Todo
 
 The current list of todos:
 
@@ -124,7 +123,7 @@ The current list of todos:
 * Add the ability to specify if a child process should die if the parent process
   is terminated.
 
-## License ##
+## License
 
 This is free and unencumbered software released into the public domain.
 
