@@ -1,6 +1,6 @@
 /*
    The latest version of this library is available on GitHub;
-   https://github.com/sheredom/process.h
+   https://github.com/sheredom/subprocess.h
 */
 
 /*
@@ -30,8 +30,8 @@
    For more information, please refer to <http://unlicense.org/>
 */
 
-#ifndef SHEREDOM_PROCESS_H_INCLUDED
-#define SHEREDOM_PROCESS_H_INCLUDED
+#ifndef SHEREDOM_SUBPROCESS_H_INCLUDED
+#define SHEREDOM_SUBPROCESS_H_INCLUDED
 
 #if defined(_MSC_VER)
 #pragma warning(push, 1)
@@ -44,23 +44,23 @@
 #endif
 
 #if defined(__clang__) || defined(__GNUC__)
-#define process_pure __attribute__((pure))
-#define process_weak __attribute__((weak))
+#define subprocess_pure __attribute__((pure))
+#define subprocess_weak __attribute__((weak))
 #elif defined(_MSC_VER)
-#define process_pure
-#define process_weak __inline
+#define subprocess_pure
+#define subprocess_weak __inline
 #else
 #error Non clang, non gcc, non MSVC compiler found!
 #endif
 
-struct process_s;
+struct subprocess_s;
 
-enum process_option_e {
+enum subprocess_option_e {
   // stdout and stderr are the same FILE.
-  process_option_combined_stdout_stderr = 0x1,
+  subprocess_option_combined_stdout_stderr = 0x1,
 
   // The child process should inherit the environment variables of the parent.
-  process_option_inherit_environment = 0x2
+  subprocess_option_inherit_environment = 0x2
 };
 
 #if defined(__cplusplus)
@@ -70,11 +70,12 @@ extern "C" {
 /// @brief Create a process.
 /// @param command_line An array of strings for the command line to execute for
 /// this process. The last element must be NULL to signify the end of the array.
-/// @param options A bit field of process_option_e's to pass.
+/// @param options A bit field of subprocess_option_e's to pass.
 /// @param out_process The newly created process.
 /// @return On success 0 is returned.
-process_weak int process_create(const char *const command_line[], int options,
-                                struct process_s *const out_process);
+subprocess_weak int subprocess_create(const char *const command_line[],
+                                      int options,
+                                      struct subprocess_s *const out_process);
 
 /// @brief Get the standard input file for a process.
 /// @param process The process to query.
@@ -82,8 +83,8 @@ process_weak int process_create(const char *const command_line[], int options,
 ///
 /// The file returned can be written to by the parent process to feed data to
 /// the standard input of the process.
-process_pure process_weak FILE *
-process_stdin(const struct process_s *const process);
+subprocess_pure subprocess_weak FILE *
+subprocess_stdin(const struct subprocess_s *const process);
 
 /// @brief Get the standard output file for a process.
 /// @param process The process to query.
@@ -91,8 +92,8 @@ process_stdin(const struct process_s *const process);
 ///
 /// The file returned can be read from by the parent process to read data from
 /// the standard output of the child process.
-process_pure process_weak FILE *
-process_stdout(const struct process_s *const process);
+subprocess_pure subprocess_weak FILE *
+subprocess_stdout(const struct subprocess_s *const process);
 
 /// @brief Get the standard error file for a process.
 /// @param process The process to query.
@@ -101,11 +102,11 @@ process_stdout(const struct process_s *const process);
 /// The file returned can be read from by the parent process to read data from
 /// the standard error of the child process.
 ///
-/// If the process was created with the process_option_combined_stdout_stderr
-/// option bit set, this function will return NULL, and the process_stdout
+/// If the process was created with the subprocess_option_combined_stdout_stderr
+/// option bit set, this function will return NULL, and the subprocess_stdout
 /// function should be used for both the standard output and error combined.
-process_pure process_weak FILE *
-process_stderr(const struct process_s *const process);
+subprocess_pure subprocess_weak FILE *
+subprocess_stderr(const struct subprocess_s *const process);
 
 /// @brief Wait for a process to finish execution.
 /// @param process The process to wait for.
@@ -114,15 +115,15 @@ process_stderr(const struct process_s *const process);
 /// @return On success 0 is returned.
 ///
 /// Joining a process will close the stdin pipe to the process.
-process_weak int process_join(struct process_s *const process,
-                              int *const out_return_code);
+subprocess_weak int subprocess_join(struct subprocess_s *const process,
+                                    int *const out_return_code);
 
 /// @brief Destroy a previously created process.
 /// @param process The process to destroy.
 ///
 /// If the process to be destroyed had not finished execution, it may out live
 /// the parent process.
-process_weak int process_destroy(struct process_s *const process);
+subprocess_weak int subprocess_destroy(struct subprocess_s *const process);
 
 #if defined(__cplusplus)
 } // extern "C"
@@ -149,20 +150,20 @@ typedef struct _SECURITY_ATTRIBUTES *LPSECURITY_ATTRIBUTES;
 typedef struct _STARTUPINFOA *LPSTARTUPINFOA;
 
 #pragma warning(push, 1)
-struct process_process_information_s {
+struct subprocess_subprocess_information_s {
   void *hProcess;
   void *hThread;
   unsigned long dwProcessId;
   unsigned long dwThreadId;
 };
 
-struct process_security_attributes_s {
+struct subprocess_security_attributes_s {
   unsigned long nLength;
   void *lpSecurityDescriptor;
   int bInheritHandle;
 };
 
-struct process_startup_info_s {
+struct subprocess_startup_info_s {
   unsigned long cb;
   char *lpReserved;
   char *lpDesktop;
@@ -205,7 +206,7 @@ void *__cdecl _alloca(size_t);
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wpadded"
 #endif
-struct process_s {
+struct subprocess_s {
   FILE *stdin_file;
   FILE *stdout_file;
   FILE *stderr_file;
@@ -223,8 +224,8 @@ struct process_s {
 #pragma clang diagnostic pop
 #endif
 
-int process_create(const char *const commandLine[], int options,
-                   struct process_s *const out_process) {
+int subprocess_create(const char *const commandLine[], int options,
+                      struct subprocess_s *const out_process) {
 #if defined(_MSC_VER)
   int fd;
   void *rd, *wr;
@@ -233,17 +234,17 @@ int process_create(const char *const commandLine[], int options,
   int i, j;
   const unsigned long startFUseStdHandles = 0x00000100;
   const unsigned long handleFlagInherit = 0x00000001;
-  struct process_process_information_s processInfo;
-  struct process_security_attributes_s saAttr = {sizeof(saAttr), 0, 1};
+  struct subprocess_subprocess_information_s processInfo;
+  struct subprocess_security_attributes_s saAttr = {sizeof(saAttr), 0, 1};
   char *environment = 0;
-  struct process_startup_info_s startInfo = {0, 0, 0, 0, 0, 0, 0, 0, 0,
-                                             0, 0, 0, 0, 0, 0, 0, 0, 0};
+  struct subprocess_startup_info_s startInfo = {0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                                0, 0, 0, 0, 0, 0, 0, 0, 0};
 
   startInfo.cb = sizeof(startInfo);
   startInfo.dwFlags = startFUseStdHandles;
 
-  if (process_option_inherit_environment !=
-      (options & process_option_inherit_environment)) {
+  if (subprocess_option_inherit_environment !=
+      (options & subprocess_option_inherit_environment)) {
     environment = "\0\0";
   }
 
@@ -287,8 +288,8 @@ int process_create(const char *const commandLine[], int options,
 
   startInfo.hStdOutput = wr;
 
-  if (process_option_combined_stdout_stderr ==
-      (options & process_option_combined_stdout_stderr)) {
+  if (subprocess_option_combined_stdout_stderr ==
+      (options & subprocess_option_combined_stdout_stderr)) {
     out_process->stderr_file = out_process->stdout_file;
     startInfo.hStdError = startInfo.hStdOutput;
   } else {
@@ -382,8 +383,8 @@ int process_create(const char *const commandLine[], int options,
     return -1;
   }
 
-  if (process_option_combined_stdout_stderr !=
-      (options & process_option_combined_stdout_stderr)) {
+  if (subprocess_option_combined_stdout_stderr !=
+      (options & subprocess_option_combined_stdout_stderr)) {
     if (0 != pipe(stderrfd)) {
       return -1;
     }
@@ -406,8 +407,8 @@ int process_create(const char *const commandLine[], int options,
     // Map the write end to stdout
     dup2(stdoutfd[1], STDOUT_FILENO);
 
-    if (process_option_combined_stdout_stderr ==
-        (options & process_option_combined_stdout_stderr)) {
+    if (subprocess_option_combined_stdout_stderr ==
+        (options & subprocess_option_combined_stdout_stderr)) {
       dup2(STDOUT_FILENO, STDERR_FILENO);
     } else {
       // Close the stderr read end
@@ -421,8 +422,8 @@ int process_create(const char *const commandLine[], int options,
 #pragma clang diagnostic ignored "-Wcast-qual"
 #pragma clang diagnostic ignored "-Wold-style-cast"
 #endif
-    if (process_option_inherit_environment !=
-        (options & process_option_inherit_environment)) {
+    if (subprocess_option_inherit_environment !=
+        (options & subprocess_option_inherit_environment)) {
       char *const environment[1] = {0};
       exit(execve(commandLine[0], (char *const *)commandLine, environment));
     } else {
@@ -442,8 +443,8 @@ int process_create(const char *const commandLine[], int options,
     // Store the stdout read end
     out_process->stdout_file = fdopen(stdoutfd[0], "rb");
 
-    if (process_option_combined_stdout_stderr ==
-        (options & process_option_combined_stdout_stderr)) {
+    if (subprocess_option_combined_stdout_stderr ==
+        (options & subprocess_option_combined_stdout_stderr)) {
       out_process->stderr_file = out_process->stdout_file;
     } else {
       // Close the stderr write end
@@ -460,15 +461,15 @@ int process_create(const char *const commandLine[], int options,
 #endif
 }
 
-FILE *process_stdin(const struct process_s *const process) {
+FILE *subprocess_stdin(const struct subprocess_s *const process) {
   return process->stdin_file;
 }
 
-FILE *process_stdout(const struct process_s *const process) {
+FILE *subprocess_stdout(const struct subprocess_s *const process) {
   return process->stdout_file;
 }
 
-FILE *process_stderr(const struct process_s *const process) {
+FILE *subprocess_stderr(const struct subprocess_s *const process) {
   if (process->stdout_file != process->stderr_file) {
     return process->stderr_file;
   } else {
@@ -476,7 +477,8 @@ FILE *process_stderr(const struct process_s *const process) {
   }
 }
 
-int process_join(struct process_s *const process, int *const out_return_code) {
+int subprocess_join(struct subprocess_s *const process,
+                    int *const out_return_code) {
 #if defined(_MSC_VER)
   const unsigned long infinite = 0xFFFFFFFF;
 
@@ -535,7 +537,7 @@ int process_join(struct process_s *const process, int *const out_return_code) {
 #endif
 }
 
-int process_destroy(struct process_s *const process) {
+int subprocess_destroy(struct subprocess_s *const process) {
   if (0 != process->stdin_file) {
     fclose(process->stdin_file);
   }
@@ -569,4 +571,4 @@ int process_destroy(struct process_s *const process) {
   return 0;
 }
 
-#endif /* SHEREDOM_PROCESS_H_INCLUDED */
+#endif /* SHEREDOM_SUBPROCESS_H_INCLUDED */

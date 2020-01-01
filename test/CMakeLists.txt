@@ -42,7 +42,7 @@ add_executable(process_combined_stdout_stderr process_combined_stdout_stderr.c)
 add_executable(process_inherit_environment process_inherit_environment.c)
 
 add_executable(process_test
-  ../process.h
+  ../subprocess.h
   utest.h
   main.c
   test.c
