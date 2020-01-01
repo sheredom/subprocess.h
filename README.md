@@ -1,7 +1,7 @@
 # 🐜 subprocess.h
 
 [![Build status](https://ci.appveyor.com/api/projects/status/0sm37thiavt9juee?svg=true)](https://ci.appveyor.com/project/sheredom/subprocess-h)
-[![Build Status](https://travis-ci.org/sheredom/subprocess.h.svg)](https://travis-ci.org/sheredom/process.h)
+[![Build Status](https://travis-ci.org/sheredom/subprocess.h.svg)](https://travis-ci.org/sheredom/subprocess.h)
 
 A simple one header solution to launching processes and interacting with them
 for C/C++.
