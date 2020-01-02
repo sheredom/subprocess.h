@@ -41,12 +41,14 @@ add_executable(process_stderr_argv process_stderr_argv.c)
 add_executable(process_combined_stdout_stderr process_combined_stdout_stderr.c)
 add_executable(process_inherit_environment process_inherit_environment.c)
 
-add_executable(process_test
+add_executable(subprocess_test
   ../subprocess.h
   utest.h
   main.c
   test.c
   test.cpp
+  pre_windows.cpp
+  post_windows.cpp
 )
 
 if("${CMAKE_C_COMPILER_ID}" STREQUAL "GNU")
