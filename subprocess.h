@@ -125,10 +125,6 @@ subprocess_weak int subprocess_join(struct subprocess_s *const process,
 /// the parent process.
 subprocess_weak int subprocess_destroy(struct subprocess_s *const process);
 
-#if defined(__cplusplus)
-} // extern "C"
-#endif
-
 #if !defined(_MSC_VER)
 #include <stdlib.h>
 #include <sys/types.h>
@@ -570,5 +566,9 @@ int subprocess_destroy(struct subprocess_s *const process) {
 
   return 0;
 }
+
+#if defined(__cplusplus)
+} // extern "C"
+#endif
 
 #endif /* SHEREDOM_SUBPROCESS_H_INCLUDED */

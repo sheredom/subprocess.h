@@ -19,4 +19,4 @@ script:
   - cd build
   - cmake -DCMAKE_BUILD_TYPE=$CONFIGURATION ../test
   - make
-  - ./process_test
+  - ./subprocess_test
