@@ -1,10 +1,9 @@
 #include <stdio.h>
-#include <math.h>
 
 int main()
 {
-    int p = (int)cos(0.);
-    int q = (int)sin(0.);
+    int p = 42;
+    int q = p - 2 * 21;
     int r = p / q; // this is an integer division by zero
     printf("%d", r);
     return 0;
