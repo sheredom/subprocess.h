@@ -10,9 +10,12 @@ int return_0_non_optimizable()
 {
   char buffer[100];
   long value = 62831853;
+  char *c;
+  int result;
+
   sprintf(buffer, "%ld", value);
-  char *c = buffer;
-  int result = 0;
+  c = buffer;
+  result = 0;
   while (*c) {
     int digit = (int)(c[0] - '0');
     result = result + digit;
@@ -34,6 +37,7 @@ int fun(int x) {
 int main(){
   int x = 5;
   int y;
+
   y = fun(x);
   printf("%d", y);
   return 0;

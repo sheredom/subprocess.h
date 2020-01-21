@@ -11,9 +11,12 @@ int return_0_non_optimizable()
 {
   char buffer[100];
   long value = 62831853;
+  char *c;
+  int result;
+
   sprintf(buffer, "%ld", value);
-  char *c = buffer;
-  int result = 0;
+  c = buffer;
+  result = 0;
   while (*c) {
     int digit = (int)(c[0] - '0');
     result = result + digit;
@@ -24,9 +27,11 @@ int return_0_non_optimizable()
 
 int main()
 {
-  int p = 42;
-  int q = return_0_non_optimizable();
-  int r = p / q; // this is an integer division by zero
+  int p, q, r;
+
+  p = 42;
+  q = return_0_non_optimizable();
+  r = p / q; // this is an integer division by zero
   printf("r=%d\n", r);
   return 0;
 }
