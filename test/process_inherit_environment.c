@@ -26,6 +26,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _MSC_VER
+#pragma warning(disable:4996)
+#endif // _MSC_VER
+
 int main(int argc, const char *const argv[], const char *const envp[]) {
   if ((1 < argc) && (0 == strcmp(argv[1], "all"))) {
     if (0 == *envp) {
