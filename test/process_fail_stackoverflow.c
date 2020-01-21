@@ -1,21 +1,25 @@
 #include <stdio.h>
  
+#ifdef _MSC_VER
+#pragma warning(disable:4996)
+#endif // _MSC_VER
+
 // This convoluted function returns 0
-// but will hopefuly not be optimzed away in release builds...
+// but will hopefully not be optimized away in release builds...
 int return_0_non_optimizable()
 {
   char buffer[100];
-  long value = 62831853071796;
-  snprintf(buffer, 100, "%ld", value);
+  long value = 62831853;
+  sprintf(buffer, "%ld", value);
   char *c = buffer;
   int result = 0;
   while (*c) {
-    result = result + *c - '\0';
+    int digit = (int)(c[0] - '0');
+    result = result + digit;
     c++;
   }
-  return result - 738;
+  return result - 36;
 }
-
 
 // this function is infinitely recursive and will cause a stack overflow
 int fun(int x) { 
