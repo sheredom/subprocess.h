@@ -367,7 +367,7 @@ UTEST(create, subprocess_fail_divzero) {
   ASSERT_EQ(0,subprocess_create(commandLine, 0, &process));
   ASSERT_EQ(0, subprocess_join(&process, &ret));
   ASSERT_EQ(0, subprocess_destroy(&process));
-  ASSERT_EQ(ret, EXIT_FAILURE);
+  ASSERT_NE(ret, 0);
 }
 
 UTEST(create, subprocess_fail_stackoverflow) {
@@ -378,7 +378,7 @@ UTEST(create, subprocess_fail_stackoverflow) {
   ASSERT_EQ(0,subprocess_create(commandLine, 0, &process));
   ASSERT_EQ(0, subprocess_join(&process, &ret));
   ASSERT_EQ(0, subprocess_destroy(&process));
-  ASSERT_EQ(ret, EXIT_FAILURE);
+  ASSERT_NE(ret, 0);
 }
 
 
