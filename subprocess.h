@@ -125,11 +125,18 @@ subprocess_weak int subprocess_join(struct subprocess_s *const process,
 /// the parent process.
 subprocess_weak int subprocess_destroy(struct subprocess_s *const process);
 
+/// @brief Terminate a previously created process.
+/// @param process The process to terminate.
+///
+/// If the process to be destroyed had not finished execution, it will be terminated (i.e killed)
+subprocess_weak int subprocess_terminate(struct subprocess_s *const process);
+
 #if !defined(_MSC_VER)
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <signal.h>
 #endif
 
 #if defined(_MSC_VER)
@@ -566,6 +573,16 @@ int subprocess_destroy(struct subprocess_s *const process) {
 
   return 0;
 }
+
+int subprocess_terminate(struct subprocess_s *const process) {
+  int result;
+  #if !defined(_MSC_VER)
+  result = kill(process->child, 9);
+  #endif
+
+  return result;
+}
+
 
 #if defined(__cplusplus)
 } // extern "C"
