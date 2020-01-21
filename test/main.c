@@ -29,6 +29,10 @@
 #include <unistd.h>
 #endif
 
+#if defined(_MSC_VER)
+__declspec(dllimport) void __stdcall Sleep(unsigned long);
+#endif
+
 #include "subprocess.h"
 
 UTEST(create, subprocess_return_zero) {
@@ -391,7 +395,11 @@ UTEST(create, subprocess_hung) {
   int ret = -1;
 
   ASSERT_EQ(0,subprocess_create(commandLine, 0, &process));
+#if defined(_MSC_VER)
+  Sleep(1000);
+#else
   sleep(1);
+#endif
   ASSERT_EQ(0, subprocess_terminate(&process));
   ASSERT_EQ(0, subprocess_join(&process, &ret));
   ASSERT_NE(ret, 0);
