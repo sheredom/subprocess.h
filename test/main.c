@@ -402,6 +402,7 @@ UTEST(create, subprocess_hung) {
 #endif
   ASSERT_EQ(0, subprocess_terminate(&process));
   ASSERT_EQ(0, subprocess_join(&process, &ret));
+  ASSERT_EQ(0, subprocess_destroy(&process));
   ASSERT_NE(ret, 0);
 }
 
