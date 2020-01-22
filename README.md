@@ -115,8 +115,22 @@ if (0 != result) {
 ```
 
 Note that you can destroy a process before it has completed execution - this
-allows you to spawn a process that would outlive the execution of the parent
+allows you to spawn a process that would _outlive_ the execution of the parent
 process for instance.
+
+### Terminating a Process
+
+To terminate a (possibly hung) previously created process you call `subprocess_terminate` like so:
+
+```c
+int result = subprocess_terminate(&process);
+if (0 != result) {
+  // an error occurred!
+}
+```
+
+Note that you still can call `subprocess_destroy`, and `subprocess_join` after calling `subprocess_terminate`;
+and that the return code filled by `subprocess_join(&process, &process_return)` is then guaranted to be _non zero_.
 
 ## Todo
 

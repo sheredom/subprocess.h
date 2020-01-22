@@ -125,11 +125,18 @@ subprocess_weak int subprocess_join(struct subprocess_s *const process,
 /// the parent process.
 subprocess_weak int subprocess_destroy(struct subprocess_s *const process);
 
+/// @brief Terminate a previously created process.
+/// @param process The process to terminate.
+///
+/// If the process to be destroyed had not finished execution, it will be terminated (i.e killed)
+subprocess_weak int subprocess_terminate(struct subprocess_s *const process);
+
 #if !defined(_MSC_VER)
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <signal.h>
 #endif
 
 #if defined(_MSC_VER)
@@ -194,6 +201,8 @@ __declspec(dllimport) unsigned long __stdcall WaitForSingleObject(
     void *, unsigned long);
 __declspec(dllimport) int __stdcall GetExitCodeProcess(
     void *, unsigned long *lpExitCode);
+__declspec(dllimport) int __stdcall TerminateProcess(
+  void *, unsigned int);
 __declspec(dllimport) int __cdecl _open_osfhandle(intptr_t, int);
 void *__cdecl _alloca(size_t);
 #endif
@@ -566,6 +575,24 @@ int subprocess_destroy(struct subprocess_s *const process) {
 
   return 0;
 }
+
+int subprocess_terminate(struct subprocess_s *const process) {
+#if defined(_MSC_VER)
+  unsigned int killed_process_exit_code;
+  int success_terminate;
+  int windows_call_result;
+  
+  killed_process_exit_code = 99;
+  windows_call_result = TerminateProcess(process->hProcess, killed_process_exit_code);
+  success_terminate = (windows_call_result== 0) ? 1 : 0;
+  return success_terminate;
+#else
+  int result;
+  result = kill(process->child, 9);
+  return result;
+#endif
+}
+
 
 #if defined(__cplusplus)
 } // extern "C"

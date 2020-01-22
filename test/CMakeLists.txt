@@ -42,6 +42,7 @@ add_executable(process_combined_stdout_stderr process_combined_stdout_stderr.c)
 add_executable(process_inherit_environment process_inherit_environment.c)
 add_executable(process_fail_divzero process_fail_divzero.c)
 add_executable(process_fail_stackoverflow process_fail_stackoverflow.c)
+add_executable(process_hung process_hung.c)
 
 add_executable(subprocess_test
   ../subprocess.h
