@@ -359,4 +359,27 @@ UTEST(create, subprocess_inherit_all_environment) {
   ASSERT_EQ(0, subprocess_destroy(&process));
 }
 
+UTEST(create, subprocess_fail_divzero) {
+  const char *const commandLine[] = {"./process_fail_divzero", 0};
+  struct subprocess_s process;
+  int ret = -1;
+
+  ASSERT_EQ(0,subprocess_create(commandLine, 0, &process));
+  ASSERT_EQ(0, subprocess_join(&process, &ret));
+  ASSERT_EQ(0, subprocess_destroy(&process));
+  ASSERT_NE(ret, 0);
+}
+
+UTEST(create, subprocess_fail_stackoverflow) {
+  const char *const commandLine[] = {"./process_fail_stackoverflow", 0};
+  struct subprocess_s process;
+  int ret = -1;
+
+  ASSERT_EQ(0,subprocess_create(commandLine, 0, &process));
+  ASSERT_EQ(0, subprocess_join(&process, &ret));
+  ASSERT_EQ(0, subprocess_destroy(&process));
+  ASSERT_NE(ret, 0);
+}
+
+
 UTEST_MAIN()

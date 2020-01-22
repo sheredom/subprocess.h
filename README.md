@@ -100,6 +100,9 @@ The return code of the child process is returned in the second argument (stored
 into `process_return` in the example above). This parameter can be `NULL` if you
 don't care about the process' return code.
 
+If the child process encounters an unhandled exception, the return code will always
+be filled with a _non zero_ value.
+
 ### Destroying a Process
 
 To destroy a previously created process you call `subprocess_destroy` like so:

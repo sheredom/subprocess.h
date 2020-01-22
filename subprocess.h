@@ -525,7 +525,7 @@ int subprocess_join(struct subprocess_s *const process,
     if (WIFEXITED(status)) {
       *out_return_code = WEXITSTATUS(status);
     } else {
-      *out_return_code = 0;
+      *out_return_code = EXIT_FAILURE;
     }
   }
 
