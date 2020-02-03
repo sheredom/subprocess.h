@@ -134,16 +134,17 @@ subprocess_weak int subprocess_destroy(struct subprocess_s *const process);
 
 #if defined(_MSC_VER)
 #ifdef _WIN64
-typedef __int64 intptr_t;
-typedef unsigned __int64 size_t;
+typedef __int64 subprocess_intptr_t;
+typedef unsigned __int64 subprocess_size_t;
 #else
-typedef int intptr_t;
-typedef unsigned int size_t;
+typedef int subprocess_intptr_t;
+typedef unsigned int subprocess_size_t;
 #endif
 
 typedef struct _PROCESS_INFORMATION *LPPROCESS_INFORMATION;
 typedef struct _SECURITY_ATTRIBUTES *LPSECURITY_ATTRIBUTES;
 typedef struct _STARTUPINFOA *LPSTARTUPINFOA;
+typedef struct _OVERLAPPED *LPOVERLAPPED;
 
 #pragma warning(push, 1)
 struct subprocess_subprocess_information_s {
@@ -179,23 +180,58 @@ struct subprocess_startup_info_s {
   void *hStdOutput;
   void *hStdError;
 };
+
+struct subprocess_overlapped_s {
+  uintptr_t Internal;
+  uintptr_t InternalHigh;
+  union {
+    struct {
+      unsigned long Offset;
+      unsigned long OffsetHigh;
+    } DUMMYSTRUCTNAME;
+    void *Pointer;
+  } DUMMYUNIONNAME;
+
+  void *hEvent;
+};
+
 #pragma warning(pop)
+
+__declspec(dllimport) unsigned long __stdcall GetLastError(void);
 
 __declspec(dllimport) int __stdcall SetHandleInformation(void *, unsigned long,
                                                          unsigned long);
-__declspec(dllimport) int __stdcall CreatePipe(void **, void **,
-                                               LPSECURITY_ATTRIBUTES,
-                                               unsigned long);
+__declspec(dllimport) void *__stdcall CreateNamedPipeA(
+    const char *, unsigned long, unsigned long, unsigned long, unsigned long,
+    unsigned long, unsigned long, LPSECURITY_ATTRIBUTES);
+
+__declspec(dllimport) int __stdcall ReadFile(void *, void *, unsigned long,
+                                             unsigned long *, LPOVERLAPPED);
+
+__declspec(dllimport) unsigned long __stdcall GetCurrentProcessId(void);
+
+__declspec(dllimport) void *__stdcall CreateFileA(const char *, unsigned long,
+                                                  unsigned long,
+                                                  LPSECURITY_ATTRIBUTES,
+                                                  unsigned long, unsigned long,
+                                                  void *);
+
+__declspec(dllimport) void *__stdcall CreateEventA(LPSECURITY_ATTRIBUTES, int,
+                                                   int, const char *);
+
 __declspec(dllimport) int __stdcall CreateProcessA(
     const char *, char *, LPSECURITY_ATTRIBUTES, LPSECURITY_ATTRIBUTES, int,
     unsigned long, void *, const char *, LPSTARTUPINFOA, LPPROCESS_INFORMATION);
 __declspec(dllimport) int __stdcall CloseHandle(void *);
 __declspec(dllimport) unsigned long __stdcall WaitForSingleObject(
     void *, unsigned long);
+__declspec(dllimport) unsigned long __stdcall WaitForMultipleObjects(
+    unsigned long, void *const *, int, unsigned long);
+
 __declspec(dllimport) int __stdcall GetExitCodeProcess(
     void *, unsigned long *lpExitCode);
-__declspec(dllimport) int __cdecl _open_osfhandle(intptr_t, int);
-void *__cdecl _alloca(size_t);
+__declspec(dllimport) int __cdecl _open_osfhandle(subprocess_intptr_t, int);
+void *__cdecl _alloca(subprocess_size_t);
 #endif
 
 #ifdef __clang__
@@ -212,6 +248,9 @@ struct subprocess_s {
   void *hStdInput;
   void *hStdOutput;
   void *hStdError;
+
+  void *hStdOutputWait;
+  void *hStdErrorWait;
 #else
   pid_t child;
 #endif
@@ -220,14 +259,51 @@ struct subprocess_s {
 #pragma clang diagnostic pop
 #endif
 
+subprocess_weak int
+subprocess_create_pipe_helper(struct subprocess_s *const out_process, int index,
+                              void **rd, void **wr);
+int subprocess_create_pipe_helper(struct subprocess_s *const out_process,
+                                  int index, void **rd, void **wr) {
+  const unsigned long pipeAccessInbound = 0x00000001;
+  const unsigned long fileFlagOverlapped = 0x40000000;
+  const unsigned long pipeTypeByte = 0x00000000;
+  const unsigned long pipeWait = 0x00000000;
+  const unsigned long genericWrite = 0x40000000;
+  const unsigned long openExisting = 3;
+  const unsigned long fileAttributeNormal = 0x00000080;
+  const void *const invalidHandleValue = (void *)~((subprocess_intptr_t)0);
+  struct subprocess_security_attributes_s saAttr = {sizeof(saAttr), 0, 1};
+  char name[256] = {0};
+  snprintf(name, sizeof(name) - 1,
+           "\\\\.\\pipe\\sheredom_subprocess_h.%08lx.%p.%d",
+           GetCurrentProcessId(), out_process, index);
+
+  *rd = CreateNamedPipeA(name, pipeAccessInbound | fileFlagOverlapped,
+                         pipeTypeByte | pipeWait, 1, 65536, 65536, 0,
+                         (LPSECURITY_ATTRIBUTES)&saAttr);
+
+  if (invalidHandleValue == rd) {
+    return -1;
+  }
+
+  saAttr.bInheritHandle = 0;
+  *wr = CreateFileA(name, genericWrite, 0, (LPSECURITY_ATTRIBUTES)&saAttr,
+                    openExisting, fileAttributeNormal | fileFlagOverlapped, 0);
+
+  if (invalidHandleValue == wr) {
+    return -1;
+  }
+
+  return 0;
+}
+
 int subprocess_create(const char *const commandLine[], int options,
                       struct subprocess_s *const out_process) {
 #if defined(_MSC_VER)
-  int fd;
   void *rd, *wr;
   char *commandLineCombined;
-  size_t len;
-  int i, j;
+  subprocess_size_t len;
+  int fd, i, j, uniquePipeIndex = 0;
   const unsigned long startFUseStdHandles = 0x00000100;
   const unsigned long handleFlagInherit = 0x00000001;
   struct subprocess_subprocess_information_s processInfo;
@@ -244,7 +320,8 @@ int subprocess_create(const char *const commandLine[], int options,
     environment = "\0\0";
   }
 
-  if (!CreatePipe(&rd, &wr, (LPSECURITY_ATTRIBUTES)&saAttr, 0)) {
+  if (0 !=
+      subprocess_create_pipe_helper(out_process, uniquePipeIndex++, &rd, &wr)) {
     return -1;
   }
 
@@ -252,7 +329,7 @@ int subprocess_create(const char *const commandLine[], int options,
     return -1;
   }
 
-  fd = _open_osfhandle((intptr_t)wr, 0);
+  fd = _open_osfhandle((subprocess_intptr_t)wr, 0);
 
   if (-1 != fd) {
     out_process->stdin_file = _fdopen(fd, "wb");
@@ -264,7 +341,8 @@ int subprocess_create(const char *const commandLine[], int options,
 
   startInfo.hStdInput = rd;
 
-  if (!CreatePipe(&rd, &wr, (LPSECURITY_ATTRIBUTES)&saAttr, 0)) {
+  if (0 !=
+      subprocess_create_pipe_helper(out_process, uniquePipeIndex++, &rd, &wr)) {
     return -1;
   }
 
@@ -272,7 +350,8 @@ int subprocess_create(const char *const commandLine[], int options,
     return -1;
   }
 
-  fd = _open_osfhandle((intptr_t)rd, 0);
+  out_process->hStdOutputWait = rd;
+  fd = _open_osfhandle((subprocess_intptr_t)rd, 0);
 
   if (-1 != fd) {
     out_process->stdout_file = _fdopen(fd, "rb");
@@ -289,7 +368,8 @@ int subprocess_create(const char *const commandLine[], int options,
     out_process->stderr_file = out_process->stdout_file;
     startInfo.hStdError = startInfo.hStdOutput;
   } else {
-    if (!CreatePipe(&rd, &wr, (LPSECURITY_ATTRIBUTES)&saAttr, 0)) {
+    if (0 != subprocess_create_pipe_helper(out_process, uniquePipeIndex++, &rd,
+                                           &wr)) {
       return -1;
     }
 
@@ -297,7 +377,8 @@ int subprocess_create(const char *const commandLine[], int options,
       return -1;
     }
 
-    fd = _open_osfhandle((intptr_t)rd, 0);
+    out_process->hStdErrorWait = rd;
+    fd = _open_osfhandle((subprocess_intptr_t)rd, 0);
 
     if (-1 != fd) {
       out_process->stderr_file = _fdopen(fd, "rb");
@@ -477,17 +558,62 @@ int subprocess_join(struct subprocess_s *const process,
                     int *const out_return_code) {
 #if defined(_MSC_VER)
   const unsigned long infinite = 0xFFFFFFFF;
+  const unsigned long waitFailed = 0xFFFFFFFF;
+  const unsigned long errorIoPending = 997;
+  struct subprocess_overlapped_s overlapped[2] = {{0}, {0}};
+  void *events[3] = {0, 0};
+  unsigned numEvents = 0;
+  struct subprocess_security_attributes_s saAttr = {sizeof(saAttr), 0, 0};
+  char temp[1];
 
   if (0 != process->stdin_file) {
     fclose(process->stdin_file);
     process->stdin_file = 0;
   }
+
   if (0 != process->hStdInput) {
     CloseHandle(process->hStdInput);
     process->hStdInput = NULL;
   }
 
-  WaitForSingleObject(process->hProcess, infinite);
+  events[numEvents++] = CreateEventA((LPSECURITY_ATTRIBUTES)&saAttr, 1, 0, 0);
+
+  if (0 == events[numEvents - 1]) {
+    return -1;
+  }
+
+  overlapped[numEvents - 1].hEvent = events[numEvents - 1];
+
+  if (0 == ReadFile(process->hStdOutputWait, temp, 0, 0,
+                    (LPOVERLAPPED)&overlapped[numEvents - 1])) {
+    unsigned long r = GetLastError();
+    if (errorIoPending != r) {
+      return -1;
+    }
+  }
+
+  if (process->stdout_file != process->stderr_file) {
+    events[numEvents++] = CreateEventA((LPSECURITY_ATTRIBUTES)&saAttr, 1, 0, 0);
+
+    if (0 == events[numEvents - 1]) {
+      return -1;
+    }
+
+    overlapped[numEvents - 1].hEvent = events[numEvents - 1];
+
+    if (0 == ReadFile(process->hStdErrorWait, temp, 0, 0,
+                      (LPOVERLAPPED)&overlapped[numEvents - 1])) {
+      if (errorIoPending != GetLastError()) {
+        return -1;
+      }
+    }
+  }
+
+  events[numEvents++] = process->hProcess;
+
+  if (waitFailed == WaitForMultipleObjects(numEvents, events, 0, infinite)) {
+    return -1;
+  }
 
   if (0 != process->hStdOutput) {
     CloseHandle(process->hStdOutput);

@@ -40,6 +40,7 @@ add_executable(process_stderr_argc process_stderr_argc.c)
 add_executable(process_stderr_argv process_stderr_argv.c)
 add_executable(process_combined_stdout_stderr process_combined_stdout_stderr.c)
 add_executable(process_inherit_environment process_inherit_environment.c)
+add_executable(process_stdout_data process_stdout_data.c)
 
 add_executable(subprocess_test
   ../subprocess.h

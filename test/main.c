@@ -156,7 +156,9 @@ UTEST(create, subprocess_stdout_argc) {
   stdout_file = subprocess_stdout(&process);
   ASSERT_TRUE(stdout_file);
 
-  ASSERT_TRUE(fgets(temp, 32, stdout_file));
+  fgets(temp, 32, stdout_file);
+
+  printf("%d\n", feof(stdout_file));
 
   ASSERT_EQ(5, atoi(temp));
 
@@ -355,6 +357,34 @@ UTEST(create, subprocess_inherit_all_environment) {
   ASSERT_EQ(0, subprocess_join(&process, &ret));
 
   ASSERT_EQ(1, ret);
+
+  ASSERT_EQ(0, subprocess_destroy(&process));
+}
+
+UTEST(create, subprocess_stdout_data) {
+  const char *const commandLine[] = {"./process_stdout_data", "100000", 0};
+  struct subprocess_s process;
+  int ret = -1;
+  FILE *stdout_file;
+  int count = 0;
+  int next;
+
+  ASSERT_EQ(0, subprocess_create(commandLine, 0, &process));
+
+  ASSERT_EQ(0, subprocess_join(&process, &ret));
+
+  ASSERT_EQ(0, ret);
+
+  stdout_file = subprocess_stdout(&process);
+  ASSERT_TRUE(stdout_file);
+
+  for (next = fgetc(stdout_file); EOF != next; next = fgetc(stdout_file)) {
+    count++;
+  }
+
+  ASSERT_EQ(count, 100000);
+
+  ASSERT_TRUE(feof(stdout_file));
 
   ASSERT_EQ(0, subprocess_destroy(&process));
 }
