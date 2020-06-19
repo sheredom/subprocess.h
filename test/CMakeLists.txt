@@ -43,6 +43,8 @@ add_executable(process_inherit_environment process_inherit_environment.c)
 add_executable(process_fail_divzero process_fail_divzero.c)
 add_executable(process_fail_stackoverflow process_fail_stackoverflow.c)
 add_executable(process_hung process_hung.c)
+add_executable(process_stdout_data process_stdout_data.c)
+add_executable(process_stdout_poll process_stdout_poll.c)
 
 add_executable(subprocess_test
   ../subprocess.h

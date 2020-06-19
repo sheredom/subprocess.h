@@ -219,8 +219,6 @@ struct subprocess_s {
 #if defined(_MSC_VER)
   void *hProcess;
   void *hStdInput;
-  void *hStdOutput;
-  void *hStdError;
 #else
   pid_t child;
 #endif
@@ -367,11 +365,17 @@ int subprocess_create(const char *const commandLine[], int options,
   out_process->hProcess = processInfo.hProcess;
 
   out_process->hStdInput = startInfo.hStdInput;
-  out_process->hStdOutput = startInfo.hStdOutput;
-  out_process->hStdError = startInfo.hStdError;
 
   // We don't need the handle of the primary thread in the called process.
   CloseHandle(processInfo.hThread);
+
+  if (0 != startInfo.hStdOutput) {
+    if (startInfo.hStdError != startInfo.hStdOutput) {
+      CloseHandle(startInfo.hStdError);
+    }
+
+    CloseHandle(startInfo.hStdOutput);
+  }
 
   return 0;
 #else
@@ -498,18 +502,6 @@ int subprocess_join(struct subprocess_s *const process,
 
   WaitForSingleObject(process->hProcess, infinite);
 
-  if (0 != process->hStdOutput) {
-    CloseHandle(process->hStdOutput);
-    if (process->hStdError == process->hStdOutput) {
-      process->hStdError = NULL;
-    }
-    process->hStdOutput = NULL;
-  }
-  if (0 != process->hStdError) {
-    CloseHandle(process->hStdError);
-    process->hStdError = NULL;
-  }
-
   if (out_return_code) {
     if (!GetExitCodeProcess(process->hProcess,
                             (unsigned long *)out_return_code)) {
@@ -559,17 +551,6 @@ int subprocess_destroy(struct subprocess_s *const process) {
   if (0 != process->hStdInput) {
     CloseHandle(process->hStdInput);
     process->hStdInput = NULL;
-  }
-  if (0 != process->hStdOutput) {
-    CloseHandle(process->hStdOutput);
-    if (process->hStdError == process->hStdOutput) {
-      process->hStdError = NULL;
-    }
-    process->hStdOutput = NULL;
-  }
-  if (0 != process->hStdError) {
-    CloseHandle(process->hStdError);
-    process->hStdError = NULL;
   }
 #endif
 

@@ -25,12 +25,10 @@
 
 #include "utest.h"
 
-#if !defined(_MSC_VER)
-#include <unistd.h>
-#endif
-
 #if defined(_MSC_VER)
 __declspec(dllimport) void __stdcall Sleep(unsigned long);
+#else
+#include <unistd.h>
 #endif
 
 #include "subprocess.h"
@@ -404,6 +402,85 @@ UTEST(create, subprocess_hung) {
   ASSERT_EQ(0, subprocess_join(&process, &ret));
   ASSERT_EQ(0, subprocess_destroy(&process));
   ASSERT_NE(ret, 0);
+}
+
+UTEST(create, subprocess_read) {
+  const char *const commandLine[] = {"./process_stdout_data", "1048576", 0};
+  struct subprocess_s process;
+  int ret = -1;
+  static char data[1048576 + 1] = {0};
+  unsigned index = 0;
+  FILE *out;
+
+  ASSERT_EQ(0, subprocess_create(commandLine, 0, &process));
+
+  out = subprocess_stdout(&process);
+
+  ASSERT_EQ(1048576u, fread(data, 1, sizeof(data) - 1, out));
+
+  for (index = 0; index < sizeof(data) - 1; index++) {
+    const char table[17] = "0123456789abcdef";
+    ASSERT_EQ(table[index % 16], data[index]);
+  }
+
+  ASSERT_EQ(0, subprocess_join(&process, &ret));
+  ASSERT_EQ(0, subprocess_destroy(&process));
+  ASSERT_EQ(ret, 0);
+}
+
+UTEST(subprocess, stdout_poll_fgetc) {
+  const char *const commandLine[] = {"./process_stdout_poll", "1024", 0};
+  struct subprocess_s process;
+  int ret = -1;
+  static char data[1048576 + 1] = {0};
+  char *cur = data;
+  unsigned index = 0;
+  FILE *out;
+  int next;
+
+  ASSERT_EQ(0, subprocess_create(commandLine, 0, &process));
+
+  out = subprocess_stdout(&process);
+
+  for (next = fgetc(out); EOF != next; next = fgetc(out)) {
+    *cur++ = (char)next;
+  }
+
+  for (index = 0; index < 1024; index++) {
+    const char *const helloWorld = "Hello, world!";
+    ASSERT_TRUE(0 == memcmp(data + (index * strlen(helloWorld)), helloWorld,
+                            strlen(helloWorld)));
+  }
+
+  ASSERT_EQ(0, subprocess_join(&process, &ret));
+  ASSERT_EQ(0, subprocess_destroy(&process));
+  ASSERT_EQ(ret, 0);
+}
+
+UTEST(subprocess, stdout_poll_fread_all) {
+  const char *const commandLine[] = {"./process_stdout_poll", "16384", 0};
+  struct subprocess_s process;
+  int ret = -1;
+  static char data[1048576 + 1] = {0};
+  unsigned index = 0;
+  FILE *out;
+
+  ASSERT_EQ(0, subprocess_create(commandLine, 0, &process));
+
+  out = subprocess_stdout(&process);
+
+  ASSERT_EQ(212992u, fread(data, 1, sizeof(data) - 1, out));
+  ASSERT_NE(0, feof(out));
+
+  for (index = 0; index < 16384; index++) {
+    const char *const helloWorld = "Hello, world!";
+    ASSERT_TRUE(0 == memcmp(data + (index * strlen(helloWorld)), helloWorld,
+                            strlen(helloWorld)));
+  }
+
+  ASSERT_EQ(0, subprocess_join(&process, &ret));
+  ASSERT_EQ(0, subprocess_destroy(&process));
+  ASSERT_EQ(ret, 0);
 }
 
 UTEST_MAIN()
