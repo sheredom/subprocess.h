@@ -45,6 +45,8 @@ add_executable(process_fail_stackoverflow process_fail_stackoverflow.c)
 add_executable(process_hung process_hung.c)
 add_executable(process_stdout_data process_stdout_data.c)
 add_executable(process_stdout_poll process_stdout_poll.c)
+add_executable(process_stderr_poll process_stderr_poll.c)
+add_executable(process_stdout_large process_stdout_large.c)
 
 add_executable(subprocess_test
   ../subprocess.h

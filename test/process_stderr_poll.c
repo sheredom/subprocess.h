@@ -32,7 +32,7 @@ int main(int argc, const char *const argv[]) {
 
   do {
     for (index = 0; index < max; index++) {
-      printf("Hello, world!");
+      fprintf(stderr, "Hello, world!");
     }
   } while (fgetc(stdin) != 's');
 

@@ -120,7 +120,8 @@ process for instance.
 
 ### Terminating a Process
 
-To terminate a (possibly hung) previously created process you call `subprocess_terminate` like so:
+To terminate a (possibly hung) previously created process you call
+`subprocess_terminate` like so:
 
 ```c
 int result = subprocess_terminate(&process);
@@ -129,8 +130,22 @@ if (0 != result) {
 }
 ```
 
-Note that you still can call `subprocess_destroy`, and `subprocess_join` after calling `subprocess_terminate`;
-and that the return code filled by `subprocess_join(&process, &process_return)` is then guaranted to be _non zero_.
+Note that you still can call `subprocess_destroy`, and `subprocess_join` after
+calling `subprocess_terminate`, and that the return code filled by
+`subprocess_join(&process, &process_return)` is then guaranted to be _non zero_.
+
+### Reading Asynchronously
+
+If you want to be able to read from a process _before_ calling `subprocess_join`
+on it, you cannot use `subprocess_stdout` or `subprocess_stderr` because the
+various operating systems that this library supports do not allow for this.
+
+Instead you first have to call `subprocess_create` and specify the
+`subprocess_option_enable_async` option - which enables asynchronous reading.
+
+Then you must use the `subprocess_read_stdout` and `subprocess_read_stderr`
+helper functions to do any reading from either pipe. Note that these calls _may_
+block if there isn't any data ready to be read.
 
 ## Todo
 

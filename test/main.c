@@ -428,8 +428,8 @@ UTEST(create, subprocess_read) {
   ASSERT_EQ(ret, 0);
 }
 
-UTEST(subprocess, stdout_poll_fgetc) {
-  const char *const commandLine[] = {"./process_stdout_poll", "1024", 0};
+UTEST(subprocess, stdout_fgetc) {
+  const char *const commandLine[] = {"./process_stdout_large", "1024", 0};
   struct subprocess_s process;
   int ret = -1;
   static char data[1048576 + 1] = {0};
@@ -457,8 +457,8 @@ UTEST(subprocess, stdout_poll_fgetc) {
   ASSERT_EQ(ret, 0);
 }
 
-UTEST(subprocess, stdout_poll_fread_all) {
-  const char *const commandLine[] = {"./process_stdout_poll", "16384", 0};
+UTEST(subprocess, stdout_fread_all) {
+  const char *const commandLine[] = {"./process_stdout_large", "16384", 0};
   struct subprocess_s process;
   int ret = -1;
   static char data[1048576 + 1] = {0};
@@ -471,6 +471,173 @@ UTEST(subprocess, stdout_poll_fread_all) {
 
   ASSERT_EQ(212992u, fread(data, 1, sizeof(data) - 1, out));
   ASSERT_NE(0, feof(out));
+
+  for (index = 0; index < 16384; index++) {
+    const char *const helloWorld = "Hello, world!";
+    ASSERT_TRUE(0 == memcmp(data + (index * strlen(helloWorld)), helloWorld,
+                            strlen(helloWorld)));
+  }
+
+  ASSERT_EQ(0, subprocess_join(&process, &ret));
+  ASSERT_EQ(0, subprocess_destroy(&process));
+  ASSERT_EQ(ret, 0);
+}
+
+UTEST(subprocess, read_stdout) {
+  const char *const commandLine[] = {"./process_stdout_large", "16384", 0};
+  struct subprocess_s process;
+  int ret = -1;
+  static char data[1048576 + 1] = {0};
+  unsigned index = 0;
+  unsigned bytes_read = 0;
+
+  ASSERT_EQ(0, subprocess_create(commandLine, 0, &process));
+
+  do {
+    bytes_read = subprocess_read_stdout(&process, data + index,
+                                        sizeof(data) - 1 - index);
+    index += bytes_read;
+  } while (bytes_read != 0);
+
+  ASSERT_EQ(212992u, index);
+
+  for (index = 0; index < 16384; index++) {
+    const char *const helloWorld = "Hello, world!";
+    ASSERT_TRUE(0 == memcmp(data + (index * strlen(helloWorld)), helloWorld,
+                            strlen(helloWorld)));
+  }
+
+  ASSERT_EQ(0, subprocess_join(&process, &ret));
+  ASSERT_EQ(0, subprocess_destroy(&process));
+  ASSERT_EQ(ret, 0);
+}
+
+UTEST(subprocess, read_stdout_async_small) {
+  const char *const commandLine[] = {"./process_stdout_large", "1", 0};
+  struct subprocess_s process;
+  int ret = -1;
+  static char data[256 + 1] = {0};
+  unsigned index = 0;
+  unsigned bytes_read = 0;
+
+  ASSERT_EQ(0, subprocess_create(commandLine, subprocess_option_enable_async,
+                                 &process));
+
+  do {
+    bytes_read = subprocess_read_stdout(&process, data + index,
+                                        sizeof(data) - 1 - index);
+    index += bytes_read;
+  } while (bytes_read != 0);
+
+  ASSERT_EQ(13u, index);
+
+  for (index = 0; index < 1; index++) {
+    const char *const helloWorld = "Hello, world!";
+    ASSERT_TRUE(0 == memcmp(data + (index * strlen(helloWorld)), helloWorld,
+                            strlen(helloWorld)));
+  }
+
+  ASSERT_EQ(0, subprocess_join(&process, &ret));
+  ASSERT_EQ(0, subprocess_destroy(&process));
+  ASSERT_EQ(ret, 0);
+}
+
+UTEST(subprocess, read_stdout_async) {
+  const char *const commandLine[] = {"./process_stdout_large", "16384", 0};
+  struct subprocess_s process;
+  int ret = -1;
+  static char data[1048576 + 1] = {0};
+  unsigned index = 0;
+  unsigned bytes_read = 0;
+
+  ASSERT_EQ(0, subprocess_create(commandLine, subprocess_option_enable_async,
+                                 &process));
+
+  do {
+    bytes_read = subprocess_read_stdout(&process, data + index,
+                                        sizeof(data) - 1 - index);
+    index += bytes_read;
+  } while (bytes_read != 0);
+
+  ASSERT_EQ(212992u, index);
+
+  for (index = 0; index < 16384; index++) {
+    const char *const helloWorld = "Hello, world!";
+    ASSERT_TRUE(0 == memcmp(data + (index * strlen(helloWorld)), helloWorld,
+                            strlen(helloWorld)));
+  }
+
+  ASSERT_EQ(0, subprocess_join(&process, &ret));
+  ASSERT_EQ(0, subprocess_destroy(&process));
+  ASSERT_EQ(ret, 0);
+}
+
+UTEST(subprocess, poll_stdout_async) {
+  const char *const commandLine[] = {"./process_stdout_poll", "16384", 0};
+  struct subprocess_s process;
+  int ret = -1;
+  static char data[1048576 + 1] = {0};
+  unsigned index = 0;
+  unsigned bytes_read = 0;
+
+  ASSERT_EQ(0, subprocess_create(commandLine, subprocess_option_enable_async,
+                                 &process));
+
+  do {
+    bytes_read = subprocess_read_stdout(&process, data + index,
+                                        sizeof(data) - 1 - index);
+
+    // Send the control character to the subprocess to tell it to stop after
+    // we've read at least one thing from it's stdout (meaning the read was
+    // definitely async).
+    if (index == 0) {
+      fputc('s', subprocess_stdin(&process));
+      fflush(subprocess_stdin(&process));
+    }
+
+    index += bytes_read;
+  } while (bytes_read != 0);
+
+  ASSERT_EQ(212992u, index);
+
+  for (index = 0; index < 16384; index++) {
+    const char *const helloWorld = "Hello, world!";
+    ASSERT_TRUE(0 == memcmp(data + (index * strlen(helloWorld)), helloWorld,
+                            strlen(helloWorld)));
+  }
+
+  ASSERT_EQ(0, subprocess_join(&process, &ret));
+  ASSERT_EQ(0, subprocess_destroy(&process));
+  ASSERT_EQ(ret, 0);
+}
+
+UTEST(subprocess, poll_stderr_async) {
+  const char *const commandLine[] = {"./process_stderr_poll", "16384", 0};
+  struct subprocess_s process;
+  int ret = -1;
+  static char data[1048576 + 1] = {0};
+  unsigned index = 0;
+  unsigned bytes_read = 0;
+
+  ASSERT_EQ(0, subprocess_create(commandLine, subprocess_option_enable_async,
+                                 &process));
+
+  do {
+    bytes_read = subprocess_read_stderr(&process, data + index,
+                                        sizeof(data) - 1 - index);
+
+    // Send the control character to the subprocess to tell it to stop after
+    // we've read at least one thing from it's stdout (meaning the read was
+    // definitely async).
+    if (index == 0) {
+      fputc('s', subprocess_stdin(&process));
+      fflush(subprocess_stdin(&process));
+    }
+
+    index += bytes_read;
+  } while (bytes_read != 0);
+
+  ASSERT_EQ(212992u, index);
 
   for (index = 0; index < 16384; index++) {
     const char *const helloWorld = "Hello, world!";

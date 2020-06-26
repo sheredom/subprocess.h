@@ -30,11 +30,9 @@ int main(int argc, const char *const argv[]) {
   int index;
   const int max = atoi(argv[1]);
 
-  do {
-    for (index = 0; index < max; index++) {
-      printf("Hello, world!");
-    }
-  } while (fgetc(stdin) != 's');
+  for (index = 0; index < max; index++) {
+    printf("Hello, world!");
+  }
 
   return 0;
 }
