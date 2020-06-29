@@ -274,14 +274,22 @@ __declspec(dllimport) int __stdcall GetExitCodeProcess(
     void *, unsigned long *lpExitCode);
 __declspec(dllimport) int __stdcall TerminateProcess(
   void *, unsigned int);
-__declspec(dllimport) int __cdecl _open_osfhandle(subprocess_intptr_t, int);
-__declspec(dllimport) subprocess_intptr_t __cdecl _get_osfhandle(int);
-void *__cdecl _alloca(subprocess_size_t);
 __declspec(dllimport) unsigned long __stdcall WaitForMultipleObjects(
     unsigned long, void *const *, int, unsigned long);
 __declspec(dllimport) int __stdcall GetOverlappedResult(void *, LPOVERLAPPED,
                                                         unsigned long *, int);
-__declspec(dllimport) int __cdecl _fileno(FILE *);
+
+#if defined(_DLL) && (_DLL == 1)
+#define SUBPROCESS_DLLIMPORT __declspec(dllimport)
+#else
+#define SUBPROCESS_DLLIMPORT
+#endif
+
+SUBPROCESS_DLLIMPORT int __cdecl _fileno(FILE *);
+SUBPROCESS_DLLIMPORT int __cdecl _open_osfhandle(subprocess_intptr_t, int);
+SUBPROCESS_DLLIMPORT subprocess_intptr_t __cdecl _get_osfhandle(int);
+
+void *__cdecl _alloca(subprocess_size_t);
 #endif
 
 #ifdef __clang__
