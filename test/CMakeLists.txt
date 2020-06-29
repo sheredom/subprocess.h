@@ -89,3 +89,17 @@ elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
 else()
   message(WARNING "Unknown compiler '${CMAKE_C_COMPILER_ID}'!")
 endif()
+
+if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
+  add_executable(subprocess_mt_test
+    ../subprocess.h
+    utest.h
+    main.c
+    test.c
+    test.cpp
+    pre_windows.cpp
+    post_windows.cpp
+  )
+
+  target_compile_definitions(subprocess_mt_test PUBLIC "/MT")
+endif()
