@@ -33,6 +33,20 @@ __declspec(dllimport) void __stdcall Sleep(unsigned long);
 
 #include "subprocess.h"
 
+UTEST(create, subprocess_destroy_is_idempotent) {
+  const char *const commandLine[] = {"./process_return_zero", 0};
+  struct subprocess_s process;
+  int ret = -1;
+
+  ASSERT_EQ(0, subprocess_create(commandLine, 0, &process));
+
+  ASSERT_EQ(0, subprocess_join(&process, &ret));
+
+  ASSERT_EQ(0, subprocess_destroy(&process));
+
+  ASSERT_EQ(0, subprocess_destroy(&process));
+}
+
 UTEST(create, subprocess_return_zero) {
   const char *const commandLine[] = {"./process_return_zero", 0};
   struct subprocess_s process;

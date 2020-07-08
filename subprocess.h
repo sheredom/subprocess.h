@@ -699,27 +699,36 @@ int subprocess_join(struct subprocess_s *const process,
 int subprocess_destroy(struct subprocess_s *const process) {
   if (0 != process->stdin_file) {
     fclose(process->stdin_file);
+    process->stdin_file = 0;
   }
 
-  fclose(process->stdout_file);
+  if (0 != process->stdout_file) {
+    fclose(process->stdout_file);
 
-  if (process->stdout_file != process->stderr_file) {
-    fclose(process->stderr_file);
+    if (process->stdout_file != process->stderr_file) {
+      fclose(process->stderr_file);
+    }
+
+    process->stdout_file = 0;
+    process->stderr_file = 0;
   }
 
 #if defined(_MSC_VER)
-  CloseHandle(process->hProcess);
+  if (process->hProcess) {
+    CloseHandle(process->hProcess);
+    process->hProcess = 0;
 
-  if (0 != process->hStdInput) {
-    CloseHandle(process->hStdInput);
-  }
+    if (0 != process->hStdInput) {
+      CloseHandle(process->hStdInput);
+    }
 
-  if (0 != process->hEventOutput) {
-    CloseHandle(process->hEventOutput);
-  }
+    if (0 != process->hEventOutput) {
+      CloseHandle(process->hEventOutput);
+    }
 
-  if (0 != process->hEventError) {
-    CloseHandle(process->hEventError);
+    if (0 != process->hEventError) {
+      CloseHandle(process->hEventError);
+    }
   }
 #endif
 
