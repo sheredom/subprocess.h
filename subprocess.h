@@ -482,11 +482,18 @@ int subprocess_create(const char *const commandLine[], int options,
   // Combine commandLine together into a single string
   len = 0;
   for (i = 0; commandLine[i]; i++) {
-    // For the ' ' between items and trailing '\0'
-    len++;
+    // For the ' ' and two '"' between items and trailing '\0'
+    len += 3;
 
     for (j = 0; '\0' != commandLine[i][j]; j++) {
-      len++;
+      switch (commandLine[i][j]) {
+        case '\\':
+        case '"':
+          len += 2;
+          break;
+        default:
+          len++;
+      }
     }
   }
 
@@ -503,10 +510,20 @@ int subprocess_create(const char *const commandLine[], int options,
     if (0 != i) {
       commandLineCombined[len++] = ' ';
     }
+    commandLineCombined[len++] = '"';
 
     for (j = 0; '\0' != commandLine[i][j]; j++) {
-      commandLineCombined[len++] = commandLine[i][j];
+      switch (commandLine[i][j]) {
+        case '\\':
+        case '"':
+          commandLineCombined[len++] = '\\';
+          commandLineCombined[len++] = commandLine[i][j];
+          break;
+        default:
+          commandLineCombined[len++] = commandLine[i][j];
+      }
     }
+    commandLineCombined[len++] = '"';
   }
 
   commandLineCombined[len] = '\0';
