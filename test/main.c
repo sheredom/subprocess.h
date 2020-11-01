@@ -265,6 +265,19 @@ UTEST(create, subprocess_stderr_argv) {
   ASSERT_EQ(0, subprocess_destroy(&process));
 }
 
+UTEST(create, subprocess_return_special_argv) {
+  const char *const commandLine[] = {"./process_return_special_argv", "foo\nbar", "\"baz\"", "faz\\\"faz", 0};
+  struct subprocess_s process;
+  int ret = -1;
+
+  ASSERT_EQ(0, subprocess_create(commandLine, 0, &process));
+  ASSERT_EQ(0, subprocess_join(&process, &ret));
+
+  ASSERT_EQ(7, ret); // 0b111
+
+  ASSERT_EQ(0, subprocess_destroy(&process));
+}
+
 UTEST(create, subprocess_combined_stdout_stderr) {
   const char *const commandLine[] = {"./process_combined_stdout_stderr", 0};
   struct subprocess_s process;
