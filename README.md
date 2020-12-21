@@ -132,7 +132,7 @@ if (0 != result) {
 
 Note that you still can call `subprocess_destroy`, and `subprocess_join` after
 calling `subprocess_terminate`, and that the return code filled by
-`subprocess_join(&process, &process_return)` is then guaranted to be _non zero_.
+`subprocess_join(&process, &process_return)` is then guaranteed to be _non zero_.
 
 ### Reading Asynchronously
 
