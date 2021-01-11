@@ -205,7 +205,8 @@ UTEST(create, subprocess_stdout_argv) {
 
   ASSERT_STREQ(temp, compare);
 
-  ASSERT_TRUE(fgets(temp, 16, stdout_file)); // should contain trailing newline character(s)
+  ASSERT_TRUE(fgets(
+      temp, 16, stdout_file)); // should contain trailing newline character(s)
   ASSERT_FALSE(fgets(temp, 16, stdout_file)); // should be at EOF now
   ASSERT_TRUE(feof(stdout_file));
 
@@ -258,7 +259,8 @@ UTEST(create, subprocess_stderr_argv) {
 
   ASSERT_STREQ(temp, compare);
 
-  ASSERT_TRUE(fgets(temp, 16, stderr_file)); // should contain trailing newline character(s)
+  ASSERT_TRUE(fgets(
+      temp, 16, stderr_file)); // should contain trailing newline character(s)
   ASSERT_FALSE(fgets(temp, 16, stderr_file)); // should be at EOF now
   ASSERT_TRUE(feof(stderr_file));
 
@@ -266,7 +268,8 @@ UTEST(create, subprocess_stderr_argv) {
 }
 
 UTEST(create, subprocess_return_special_argv) {
-  const char *const commandLine[] = {"./process_return_special_argv", "foo\nbar", "\"baz\"", "faz\\\"faz", 0};
+  const char *const commandLine[] = {"./process_return_special_argv",
+                                     "foo\nbar", "\"baz\"", "faz\\\"faz", 0};
   struct subprocess_s process;
   int ret = -1;
 
@@ -397,7 +400,7 @@ UTEST(create, subprocess_fail_divzero) {
   struct subprocess_s process;
   int ret = -1;
 
-  ASSERT_EQ(0,subprocess_create(commandLine, 0, &process));
+  ASSERT_EQ(0, subprocess_create(commandLine, 0, &process));
   ASSERT_EQ(0, subprocess_join(&process, &ret));
   ASSERT_EQ(0, subprocess_destroy(&process));
   ASSERT_NE(ret, 0);
@@ -408,7 +411,7 @@ UTEST(create, subprocess_fail_stackoverflow) {
   struct subprocess_s process;
   int ret = -1;
 
-  ASSERT_EQ(0,subprocess_create(commandLine, 0, &process));
+  ASSERT_EQ(0, subprocess_create(commandLine, 0, &process));
   ASSERT_EQ(0, subprocess_join(&process, &ret));
   ASSERT_EQ(0, subprocess_destroy(&process));
   ASSERT_NE(ret, 0);
@@ -419,7 +422,7 @@ UTEST(create, subprocess_hung) {
   struct subprocess_s process;
   int ret = -1;
 
-  ASSERT_EQ(0,subprocess_create(commandLine, 0, &process));
+  ASSERT_EQ(0, subprocess_create(commandLine, 0, &process));
 #if defined(_MSC_VER)
   Sleep(1000);
 #else
@@ -696,6 +699,8 @@ UTEST(create, subprocess_alive) {
   ASSERT_NE(0, subprocess_alive(&process));
 
   ASSERT_EQ(0, subprocess_join(&process, &ret));
+
+  ASSERT_EQ(0, subprocess_alive(&process));
 
   ASSERT_EQ(40, ret);
 

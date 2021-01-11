@@ -168,8 +168,7 @@ subprocess_read_stderr(struct subprocess_s *const process, char *const buffer,
 /// @brief Returns if the subprocess is currently still alive and executing.
 /// @param process The process to check.
 /// @return If the process is still alive non-zero is returned.
-subprocess_weak int
-subprocess_alive(const struct subprocess_s *const process);
+subprocess_weak int subprocess_alive(struct subprocess_s *const process);
 
 #if defined(__cplusplus)
 #define SUBPROCESS_CAST(type, x) static_cast<type>(x)
@@ -178,11 +177,11 @@ subprocess_alive(const struct subprocess_s *const process);
 #endif
 
 #if !defined(_MSC_VER)
+#include <signal.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#include <signal.h>
 #endif
 
 #if defined(_MSC_VER)
@@ -278,8 +277,7 @@ __declspec(dllimport) unsigned long __stdcall WaitForSingleObject(
     void *, unsigned long);
 __declspec(dllimport) int __stdcall GetExitCodeProcess(
     void *, unsigned long *lpExitCode);
-__declspec(dllimport) int __stdcall TerminateProcess(
-  void *, unsigned int);
+__declspec(dllimport) int __stdcall TerminateProcess(void *, unsigned int);
 __declspec(dllimport) unsigned long __stdcall WaitForMultipleObjects(
     unsigned long, void *const *, int, unsigned long);
 __declspec(dllimport) int __stdcall GetOverlappedResult(void *, LPOVERLAPPED,
@@ -315,6 +313,8 @@ struct subprocess_s {
 #else
   pid_t child;
 #endif
+
+  subprocess_size_t alive;
 };
 #ifdef __clang__
 #pragma clang diagnostic pop
@@ -493,10 +493,11 @@ int subprocess_create(const char *const commandLine[], int options,
 
     for (j = 0; '\0' != commandLine[i][j]; j++) {
       switch (commandLine[i][j]) {
-        case '\\':
-          if (commandLine[i][j + 1] != '"') break;
-        case '"':
-          len++;
+      case '\\':
+        if (commandLine[i][j + 1] != '"')
+          break;
+      case '"':
+        len++;
       }
       len++;
     }
@@ -519,10 +520,11 @@ int subprocess_create(const char *const commandLine[], int options,
 
     for (j = 0; '\0' != commandLine[i][j]; j++) {
       switch (commandLine[i][j]) {
-        case '\\':
-          if (commandLine[i][j + 1] != '"') break;
-        case '"':
-          commandLineCombined[len++] = '\\';
+      case '\\':
+        if (commandLine[i][j + 1] != '"')
+          break;
+      case '"':
+        commandLineCombined[len++] = '\\';
       }
       commandLineCombined[len++] = commandLine[i][j];
     }
@@ -558,6 +560,8 @@ int subprocess_create(const char *const commandLine[], int options,
       CloseHandle(startInfo.hStdError);
     }
   }
+
+  out_process->alive = 1;
 
   return 0;
 #else
@@ -647,6 +651,8 @@ int subprocess_create(const char *const commandLine[], int options,
     // Store the child's pid
     out_process->child = child;
 
+    out_process->alive = 1;
+
     return 0;
   }
 #endif
@@ -691,6 +697,8 @@ int subprocess_join(struct subprocess_s *const process,
     }
   }
 
+  process->alive = 0;
+
   return 0;
 #else
   int status;
@@ -711,6 +719,8 @@ int subprocess_join(struct subprocess_s *const process,
       *out_return_code = EXIT_FAILURE;
     }
   }
+
+  process->alive = 0;
 
   return 0;
 #endif
@@ -760,10 +770,11 @@ int subprocess_terminate(struct subprocess_s *const process) {
   unsigned int killed_process_exit_code;
   int success_terminate;
   int windows_call_result;
-  
+
   killed_process_exit_code = 99;
-  windows_call_result = TerminateProcess(process->hProcess, killed_process_exit_code);
-  success_terminate = (windows_call_result== 0) ? 1 : 0;
+  windows_call_result =
+      TerminateProcess(process->hProcess, killed_process_exit_code);
+  success_terminate = (windows_call_result == 0) ? 1 : 0;
   return success_terminate;
 #else
   int result;
@@ -856,16 +867,28 @@ unsigned subprocess_read_stderr(struct subprocess_s *const process,
 #endif
 }
 
-int
-subprocess_alive(const struct subprocess_s *const process) {
-#if defined(_MSC_VER)
-  const unsigned long zero = 0x0;
-  const unsigned long wait_object_0 = 0x00000000L;
+int subprocess_alive(struct subprocess_s *const process) {
+  int is_alive = SUBPROCESS_CAST(int, process->alive);
 
-  return wait_object_0 != WaitForSingleObject(process->hProcess, zero);
+  if (!is_alive) {
+    return 0;
+  }
+#if defined(_MSC_VER)
+  {
+    const unsigned long zero = 0x0;
+    const unsigned long wait_object_0 = 0x00000000L;
+
+    is_alive = wait_object_0 != WaitForSingleObject(process->hProcess, zero);
+  }
 #else
-  return 0 == waitpid(process->child, &status, WNOHANG | WNOWAIT);
+  { is_alive = 0 == waitpid(process->child, &status, WNOHANG | WNOWAIT); }
 #endif
+
+  if (!is_alive) {
+    process->alive = 0;
+  }
+
+  return is_alive;
 }
 
 #if defined(__cplusplus)

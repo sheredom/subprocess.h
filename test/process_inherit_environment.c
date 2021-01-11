@@ -27,7 +27,7 @@
 #include <string.h>
 
 #ifdef _MSC_VER
-#pragma warning(disable:4996)
+#pragma warning(disable : 4996)
 #endif // _MSC_VER
 
 int main(int argc, const char *const argv[], const char *const envp[]) {
