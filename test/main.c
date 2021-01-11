@@ -707,4 +707,21 @@ UTEST(create, subprocess_alive) {
   ASSERT_EQ(0, subprocess_destroy(&process));
 }
 
+UTEST(create, subprocess_alive_then_join) {
+  const char *const commandLine[] = {"./process_return_zero", 0};
+  struct subprocess_s process;
+  int ret = -1;
+
+  ASSERT_EQ(0, subprocess_create(commandLine, 0, &process));
+
+  while (0 != subprocess_alive(&process)) {
+  }
+
+  ASSERT_EQ(0, subprocess_join(&process, &ret));
+
+  ASSERT_EQ(0, ret);
+
+  ASSERT_EQ(0, subprocess_destroy(&process));
+}
+
 UTEST_MAIN()

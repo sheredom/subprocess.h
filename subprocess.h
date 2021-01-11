@@ -294,6 +294,8 @@ SUBPROCESS_DLLIMPORT int __cdecl _open_osfhandle(subprocess_intptr_t, int);
 SUBPROCESS_DLLIMPORT subprocess_intptr_t __cdecl _get_osfhandle(int);
 
 void *__cdecl _alloca(subprocess_size_t);
+#else
+typedef size_t subprocess_size_t;
 #endif
 
 #ifdef __clang__
@@ -312,6 +314,7 @@ struct subprocess_s {
   void *hEventError;
 #else
   pid_t child;
+  int return_status;
 #endif
 
   subprocess_size_t alive;
@@ -679,13 +682,14 @@ int subprocess_join(struct subprocess_s *const process,
 #if defined(_MSC_VER)
   const unsigned long infinite = 0xFFFFFFFF;
 
-  if (0 != process->stdin_file) {
+  if (process->stdin_file) {
     fclose(process->stdin_file);
     process->stdin_file = 0;
   }
-  if (0 != process->hStdInput) {
+
+  if (process->hStdInput) {
     CloseHandle(process->hStdInput);
-    process->hStdInput = NULL;
+    process->hStdInput = 0;
   }
 
   WaitForSingleObject(process->hProcess, infinite);
@@ -703,36 +707,42 @@ int subprocess_join(struct subprocess_s *const process,
 #else
   int status;
 
-  if (0 != process->stdin_file) {
+  if (process->stdin_file) {
     fclose(process->stdin_file);
     process->stdin_file = 0;
   }
 
-  if (process->child != waitpid(process->child, &status, 0)) {
-    return -1;
+  if (process->child) {
+    if (process->child != waitpid(process->child, &status, 0)) {
+      return -1;
+    }
+
+    process->child = 0;
+
+    if (WIFEXITED(status)) {
+      process->return_status = WEXITSTATUS(status);
+    } else {
+      process->return_status = EXIT_FAILURE;
+    }
+
+    process->alive = 0;
   }
 
   if (out_return_code) {
-    if (WIFEXITED(status)) {
-      *out_return_code = WEXITSTATUS(status);
-    } else {
-      *out_return_code = EXIT_FAILURE;
-    }
+    *out_return_code = process->return_status;
   }
-
-  process->alive = 0;
 
   return 0;
 #endif
 }
 
 int subprocess_destroy(struct subprocess_s *const process) {
-  if (0 != process->stdin_file) {
+  if (process->stdin_file) {
     fclose(process->stdin_file);
     process->stdin_file = 0;
   }
 
-  if (0 != process->stdout_file) {
+  if (process->stdout_file) {
     fclose(process->stdout_file);
 
     if (process->stdout_file != process->stderr_file) {
@@ -748,15 +758,15 @@ int subprocess_destroy(struct subprocess_s *const process) {
     CloseHandle(process->hProcess);
     process->hProcess = 0;
 
-    if (0 != process->hStdInput) {
+    if (process->hStdInput) {
       CloseHandle(process->hStdInput);
     }
 
-    if (0 != process->hEventOutput) {
+    if (process->hEventOutput) {
       CloseHandle(process->hEventOutput);
     }
 
-    if (0 != process->hEventError) {
+    if (process->hEventError) {
       CloseHandle(process->hEventError);
     }
   }
@@ -881,7 +891,27 @@ int subprocess_alive(struct subprocess_s *const process) {
     is_alive = wait_object_0 != WaitForSingleObject(process->hProcess, zero);
   }
 #else
-  { is_alive = 0 == waitpid(process->child, &status, WNOHANG | WNOWAIT); }
+  {
+    int status;
+    is_alive = 0 == waitpid(process->child, &status, WNOHANG);
+
+    // If the process was successfully waited on we need to cleanup now.
+    if (!is_alive) {
+      if (WIFEXITED(status)) {
+        process->return_status = WEXITSTATUS(status);
+      } else {
+        process->return_status = EXIT_FAILURE;
+      }
+
+      // Since we've already successfully waited on the process, we need to wipe
+      // the child now.
+      process->child = 0;
+
+      if (subprocess_join(process, 0)) {
+        return -1;
+      }
+    }
+  }
 #endif
 
   if (!is_alive) {
