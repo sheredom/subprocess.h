@@ -75,7 +75,7 @@ extern "C" {
 /// this process. The last element must be NULL to signify the end of the array.
 /// @param options A bit field of subprocess_option_e's to pass.
 /// @param out_process The newly created process.
-/// @return On success 0 is returned.
+/// @return On success zero is returned.
 subprocess_weak int subprocess_create(const char *const command_line[],
                                       int options,
                                       struct subprocess_s *const out_process);
@@ -115,7 +115,7 @@ subprocess_stderr(const struct subprocess_s *const process);
 /// @param process The process to wait for.
 /// @param out_return_code The return code of the returned process (can be
 /// NULL).
-/// @return On success 0 is returned.
+/// @return On success zero is returned.
 ///
 /// Joining a process will close the stdin pipe to the process.
 subprocess_weak int subprocess_join(struct subprocess_s *const process,
@@ -123,7 +123,7 @@ subprocess_weak int subprocess_join(struct subprocess_s *const process,
 
 /// @brief Destroy a previously created process.
 /// @param process The process to destroy.
-/// @return On success 0 is returned.
+/// @return On success zero is returned.
 ///
 /// If the process to be destroyed had not finished execution, it may out live
 /// the parent process.
@@ -131,7 +131,7 @@ subprocess_weak int subprocess_destroy(struct subprocess_s *const process);
 
 /// @brief Terminate a previously created process.
 /// @param process The process to terminate.
-/// @return On success 0 is returned.
+/// @return On success zero is returned.
 ///
 /// If the process to be destroyed had not finished execution, it will be
 /// terminated (i.e killed).
@@ -164,6 +164,12 @@ subprocess_read_stdout(struct subprocess_s *const process, char *const buffer,
 subprocess_weak unsigned
 subprocess_read_stderr(struct subprocess_s *const process, char *const buffer,
                        unsigned size);
+
+/// @brief Returns if the subprocess is currently still alive and executing.
+/// @param process The process to check.
+/// @return If the process is still alive non-zero is returned.
+subprocess_weak int
+subprocess_alive(const struct subprocess_s *const process);
 
 #if defined(__cplusplus)
 #define SUBPROCESS_CAST(type, x) static_cast<type>(x)
@@ -847,6 +853,18 @@ unsigned subprocess_read_stderr(struct subprocess_s *const process,
   }
 
   return SUBPROCESS_CAST(unsigned, bytes_read);
+#endif
+}
+
+int
+subprocess_alive(const struct subprocess_s *const process) {
+#if defined(_MSC_VER)
+  const unsigned long zero = 0x0;
+  const unsigned long wait_object_0 = 0x00000000L;
+
+  return wait_object_0 != WaitForSingleObject(process->hProcess, zero);
+#else
+  return 0 == waitpid(process->child, &status, WNOHANG | WNOWAIT);
 #endif
 }
 

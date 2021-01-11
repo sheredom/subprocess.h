@@ -677,4 +677,29 @@ UTEST(subprocess, poll_stderr_async) {
   ASSERT_EQ(ret, 0);
 }
 
+UTEST(create, subprocess_alive) {
+  const char *const commandLine[] = {"./process_return_stdin_count", 0};
+  struct subprocess_s process;
+  int ret = -1;
+  FILE *stdin_file;
+  const char temp[41] = "Wee, sleekit, cow'rin, tim'rous beastie!";
+
+  ASSERT_EQ(0, subprocess_create(commandLine, 0, &process));
+
+  ASSERT_NE(0, subprocess_alive(&process));
+
+  stdin_file = subprocess_stdin(&process);
+  ASSERT_TRUE(stdin_file);
+
+  ASSERT_NE(EOF, fputs(temp, stdin_file));
+
+  ASSERT_NE(0, subprocess_alive(&process));
+
+  ASSERT_EQ(0, subprocess_join(&process, &ret));
+
+  ASSERT_EQ(40, ret);
+
+  ASSERT_EQ(0, subprocess_destroy(&process));
+}
+
 UTEST_MAIN()
