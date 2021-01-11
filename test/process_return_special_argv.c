@@ -23,7 +23,6 @@
 //
 // For more information, please refer to <http://unlicense.org/>
 
-
 #include <string.h>
 int main(int argc, const char *const argv[]) {
   unsigned int res = 0;

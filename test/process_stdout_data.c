@@ -35,7 +35,7 @@ __declspec(dllimport) void __stdcall Sleep(unsigned long);
 int main(int argc, const char *const argv[]) {
   int i;
   int e = atoi(argv[1]);
-  #if defined(_MSC_VER)
+#if defined(_MSC_VER)
   Sleep(2000);
 #else
   sleep(2);

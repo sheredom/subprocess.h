@@ -75,7 +75,7 @@ extern "C" {
 /// this process. The last element must be NULL to signify the end of the array.
 /// @param options A bit field of subprocess_option_e's to pass.
 /// @param out_process The newly created process.
-/// @return On success 0 is returned.
+/// @return On success zero is returned.
 subprocess_weak int subprocess_create(const char *const command_line[],
                                       int options,
                                       struct subprocess_s *const out_process);
@@ -115,7 +115,7 @@ subprocess_stderr(const struct subprocess_s *const process);
 /// @param process The process to wait for.
 /// @param out_return_code The return code of the returned process (can be
 /// NULL).
-/// @return On success 0 is returned.
+/// @return On success zero is returned.
 ///
 /// Joining a process will close the stdin pipe to the process.
 subprocess_weak int subprocess_join(struct subprocess_s *const process,
@@ -123,7 +123,7 @@ subprocess_weak int subprocess_join(struct subprocess_s *const process,
 
 /// @brief Destroy a previously created process.
 /// @param process The process to destroy.
-/// @return On success 0 is returned.
+/// @return On success zero is returned.
 ///
 /// If the process to be destroyed had not finished execution, it may out live
 /// the parent process.
@@ -131,7 +131,7 @@ subprocess_weak int subprocess_destroy(struct subprocess_s *const process);
 
 /// @brief Terminate a previously created process.
 /// @param process The process to terminate.
-/// @return On success 0 is returned.
+/// @return On success zero is returned.
 ///
 /// If the process to be destroyed had not finished execution, it will be
 /// terminated (i.e killed).
@@ -165,6 +165,11 @@ subprocess_weak unsigned
 subprocess_read_stderr(struct subprocess_s *const process, char *const buffer,
                        unsigned size);
 
+/// @brief Returns if the subprocess is currently still alive and executing.
+/// @param process The process to check.
+/// @return If the process is still alive non-zero is returned.
+subprocess_weak int subprocess_alive(struct subprocess_s *const process);
+
 #if defined(__cplusplus)
 #define SUBPROCESS_CAST(type, x) static_cast<type>(x)
 #else
@@ -172,11 +177,11 @@ subprocess_read_stderr(struct subprocess_s *const process, char *const buffer,
 #endif
 
 #if !defined(_MSC_VER)
+#include <signal.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#include <signal.h>
 #endif
 
 #if defined(_MSC_VER)
@@ -272,8 +277,7 @@ __declspec(dllimport) unsigned long __stdcall WaitForSingleObject(
     void *, unsigned long);
 __declspec(dllimport) int __stdcall GetExitCodeProcess(
     void *, unsigned long *lpExitCode);
-__declspec(dllimport) int __stdcall TerminateProcess(
-  void *, unsigned int);
+__declspec(dllimport) int __stdcall TerminateProcess(void *, unsigned int);
 __declspec(dllimport) unsigned long __stdcall WaitForMultipleObjects(
     unsigned long, void *const *, int, unsigned long);
 __declspec(dllimport) int __stdcall GetOverlappedResult(void *, LPOVERLAPPED,
@@ -290,6 +294,8 @@ SUBPROCESS_DLLIMPORT int __cdecl _open_osfhandle(subprocess_intptr_t, int);
 SUBPROCESS_DLLIMPORT subprocess_intptr_t __cdecl _get_osfhandle(int);
 
 void *__cdecl _alloca(subprocess_size_t);
+#else
+typedef size_t subprocess_size_t;
 #endif
 
 #ifdef __clang__
@@ -308,7 +314,10 @@ struct subprocess_s {
   void *hEventError;
 #else
   pid_t child;
+  int return_status;
 #endif
+
+  subprocess_size_t alive;
 };
 #ifdef __clang__
 #pragma clang diagnostic pop
@@ -487,10 +496,11 @@ int subprocess_create(const char *const commandLine[], int options,
 
     for (j = 0; '\0' != commandLine[i][j]; j++) {
       switch (commandLine[i][j]) {
-        case '\\':
-          if (commandLine[i][j + 1] != '"') break;
-        case '"':
-          len++;
+      case '\\':
+        if (commandLine[i][j + 1] != '"')
+          break;
+      case '"':
+        len++;
       }
       len++;
     }
@@ -513,10 +523,11 @@ int subprocess_create(const char *const commandLine[], int options,
 
     for (j = 0; '\0' != commandLine[i][j]; j++) {
       switch (commandLine[i][j]) {
-        case '\\':
-          if (commandLine[i][j + 1] != '"') break;
-        case '"':
-          commandLineCombined[len++] = '\\';
+      case '\\':
+        if (commandLine[i][j + 1] != '"')
+          break;
+      case '"':
+        commandLineCombined[len++] = '\\';
       }
       commandLineCombined[len++] = commandLine[i][j];
     }
@@ -552,6 +563,8 @@ int subprocess_create(const char *const commandLine[], int options,
       CloseHandle(startInfo.hStdError);
     }
   }
+
+  out_process->alive = 1;
 
   return 0;
 #else
@@ -641,6 +654,8 @@ int subprocess_create(const char *const commandLine[], int options,
     // Store the child's pid
     out_process->child = child;
 
+    out_process->alive = 1;
+
     return 0;
   }
 #endif
@@ -667,13 +682,14 @@ int subprocess_join(struct subprocess_s *const process,
 #if defined(_MSC_VER)
   const unsigned long infinite = 0xFFFFFFFF;
 
-  if (0 != process->stdin_file) {
+  if (process->stdin_file) {
     fclose(process->stdin_file);
     process->stdin_file = 0;
   }
-  if (0 != process->hStdInput) {
+
+  if (process->hStdInput) {
     CloseHandle(process->hStdInput);
-    process->hStdInput = NULL;
+    process->hStdInput = 0;
   }
 
   WaitForSingleObject(process->hProcess, infinite);
@@ -685,25 +701,35 @@ int subprocess_join(struct subprocess_s *const process,
     }
   }
 
+  process->alive = 0;
+
   return 0;
 #else
   int status;
 
-  if (0 != process->stdin_file) {
+  if (process->stdin_file) {
     fclose(process->stdin_file);
     process->stdin_file = 0;
   }
 
-  if (process->child != waitpid(process->child, &status, 0)) {
-    return -1;
+  if (process->child) {
+    if (process->child != waitpid(process->child, &status, 0)) {
+      return -1;
+    }
+
+    process->child = 0;
+
+    if (WIFEXITED(status)) {
+      process->return_status = WEXITSTATUS(status);
+    } else {
+      process->return_status = EXIT_FAILURE;
+    }
+
+    process->alive = 0;
   }
 
   if (out_return_code) {
-    if (WIFEXITED(status)) {
-      *out_return_code = WEXITSTATUS(status);
-    } else {
-      *out_return_code = EXIT_FAILURE;
-    }
+    *out_return_code = process->return_status;
   }
 
   return 0;
@@ -711,12 +737,12 @@ int subprocess_join(struct subprocess_s *const process,
 }
 
 int subprocess_destroy(struct subprocess_s *const process) {
-  if (0 != process->stdin_file) {
+  if (process->stdin_file) {
     fclose(process->stdin_file);
     process->stdin_file = 0;
   }
 
-  if (0 != process->stdout_file) {
+  if (process->stdout_file) {
     fclose(process->stdout_file);
 
     if (process->stdout_file != process->stderr_file) {
@@ -732,15 +758,15 @@ int subprocess_destroy(struct subprocess_s *const process) {
     CloseHandle(process->hProcess);
     process->hProcess = 0;
 
-    if (0 != process->hStdInput) {
+    if (process->hStdInput) {
       CloseHandle(process->hStdInput);
     }
 
-    if (0 != process->hEventOutput) {
+    if (process->hEventOutput) {
       CloseHandle(process->hEventOutput);
     }
 
-    if (0 != process->hEventError) {
+    if (process->hEventError) {
       CloseHandle(process->hEventError);
     }
   }
@@ -754,10 +780,11 @@ int subprocess_terminate(struct subprocess_s *const process) {
   unsigned int killed_process_exit_code;
   int success_terminate;
   int windows_call_result;
-  
+
   killed_process_exit_code = 99;
-  windows_call_result = TerminateProcess(process->hProcess, killed_process_exit_code);
-  success_terminate = (windows_call_result== 0) ? 1 : 0;
+  windows_call_result =
+      TerminateProcess(process->hProcess, killed_process_exit_code);
+  success_terminate = (windows_call_result == 0) ? 1 : 0;
   return success_terminate;
 #else
   int result;
@@ -848,6 +875,50 @@ unsigned subprocess_read_stderr(struct subprocess_s *const process,
 
   return SUBPROCESS_CAST(unsigned, bytes_read);
 #endif
+}
+
+int subprocess_alive(struct subprocess_s *const process) {
+  int is_alive = SUBPROCESS_CAST(int, process->alive);
+
+  if (!is_alive) {
+    return 0;
+  }
+#if defined(_MSC_VER)
+  {
+    const unsigned long zero = 0x0;
+    const unsigned long wait_object_0 = 0x00000000L;
+
+    is_alive = wait_object_0 != WaitForSingleObject(process->hProcess, zero);
+  }
+#else
+  {
+    int status;
+    is_alive = 0 == waitpid(process->child, &status, WNOHANG);
+
+    // If the process was successfully waited on we need to cleanup now.
+    if (!is_alive) {
+      if (WIFEXITED(status)) {
+        process->return_status = WEXITSTATUS(status);
+      } else {
+        process->return_status = EXIT_FAILURE;
+      }
+
+      // Since we've already successfully waited on the process, we need to wipe
+      // the child now.
+      process->child = 0;
+
+      if (subprocess_join(process, 0)) {
+        return -1;
+      }
+    }
+  }
+#endif
+
+  if (!is_alive) {
+    process->alive = 0;
+  }
+
+  return is_alive;
 }
 
 #if defined(__cplusplus)

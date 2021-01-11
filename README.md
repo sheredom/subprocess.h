@@ -147,11 +147,22 @@ Then you must use the `subprocess_read_stdout` and `subprocess_read_stderr`
 helper functions to do any reading from either pipe. Note that these calls _may_
 block if there isn't any data ready to be read.
 
+## FAQs
+
+### Why does my spawned subprocess does not have internet process?
+
+If you spawn a process that needs internet access then you will have to use the
+`subprocess_option_inherit_environment` option during creation. The subprocess
+has to inherit the environment of the parent because the environment implicitly
+contains the privileges of the parent process (accessing the internet) that the
+child requires.
+
 ## Todo
 
 The current list of todos:
 
-* Add the ability to [set environment variables of the child process](https://github.com/sheredom/subprocess.h/issues/1)
+* Add the ability to
+  [set environment variables of the child process](https://github.com/sheredom/subprocess.h/issues/1)
   as suggested by [@graphitemaster](https://github.com/graphitemaster).
 * Add the ability to specify if a child process should die if the parent process
   is terminated.
