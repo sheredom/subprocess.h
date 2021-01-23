@@ -27,6 +27,7 @@
 
 #if defined(_MSC_VER)
 __declspec(dllimport) void __stdcall Sleep(unsigned long);
+__declspec(dllimport) int __stdcall SetEnvironmentVariableA(const char*, const char*);
 #else
 #include <unistd.h>
 #endif
@@ -317,7 +318,7 @@ UTEST(create, subprocess_not_inherit_environment) {
   int ret = -1;
 
 #ifdef _MSC_VER
-  ASSERT_TRUE(SetEnvironmentVariable("PROCESS_ENV_TEST", "1"));
+  ASSERT_TRUE(SetEnvironmentVariableA("PROCESS_ENV_TEST", "1"));
 #else
   ASSERT_FALSE(putenv("PROCESS_ENV_TEST=1"));
 #endif
@@ -337,7 +338,7 @@ UTEST(create, subprocess_inherit_environment) {
   int ret = -1;
 
 #ifdef _MSC_VER
-  ASSERT_TRUE(SetEnvironmentVariable("PROCESS_ENV_TEST", "42"));
+  ASSERT_TRUE(SetEnvironmentVariableA("PROCESS_ENV_TEST", "42"));
 #else
   ASSERT_FALSE(putenv("PROCESS_ENV_TEST=42"));
 #endif
@@ -359,7 +360,7 @@ UTEST(create, subprocess_not_inherit_all_environment) {
   int ret = -1;
 
 #ifdef _MSC_VER
-  ASSERT_TRUE(SetEnvironmentVariable("PROCESS_ENV_TEST", "42"));
+  ASSERT_TRUE(SetEnvironmentVariableA("PROCESS_ENV_TEST", "42"));
 #else
   ASSERT_FALSE(putenv("PROCESS_ENV_TEST=42"));
 #endif
@@ -379,7 +380,7 @@ UTEST(create, subprocess_inherit_all_environment) {
   int ret = -1;
 
 #ifdef _MSC_VER
-  ASSERT_TRUE(SetEnvironmentVariable("PROCESS_ENV_TEST", "42"));
+  ASSERT_TRUE(SetEnvironmentVariableA("PROCESS_ENV_TEST", "42"));
 #else
   ASSERT_FALSE(putenv("PROCESS_ENV_TEST=42"));
 #endif
@@ -403,7 +404,11 @@ UTEST(create, subprocess_fail_divzero) {
   ASSERT_EQ(0, subprocess_create(commandLine, 0, &process));
   ASSERT_EQ(0, subprocess_join(&process, &ret));
   ASSERT_EQ(0, subprocess_destroy(&process));
+
+  // On AArch64 systems divide by zero does not cause a failure.
+#if !((defined(__arm64__) && defined(__APPLE__)) || defined(__aarch64__))
   ASSERT_NE(ret, 0);
+#endif
 }
 
 UTEST(create, subprocess_fail_stackoverflow) {

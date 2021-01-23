@@ -1,6 +1,7 @@
 version: '{build}'
 
 skip_tags: true
+skip_branch_with_pr: true
 
 install: []
 
@@ -24,11 +25,15 @@ matrix:
   exclude:
     - platform: x64
       VSVERSION: Visual Studio 9 2008
+    # VS 2019 / 64-bit is tested in GitHub Actions instead.
+    - platform: x64
+      VSVERSION: Visual Studio 16 2019
 
 configuration:
   - Debug
-  - RelWithDebInfo
-  - MinSizeRel
+  # Removed to reduce configuration explosion.
+  # - RelWithDebInfo
+  # - MinSizeRel
   - Release
 
 build_script:
