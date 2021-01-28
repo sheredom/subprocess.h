@@ -622,11 +622,9 @@ int subprocess_create(const char *const commandLine[], int options,
 #endif
     if (subprocess_option_inherit_environment !=
         (options & subprocess_option_inherit_environment)) {
-      char *const environment[1] = {0};
-      exit(execve(commandLine[0], (char *const *)commandLine, environment));
-    } else {
-      exit(execvp(commandLine[0], (char *const *)commandLine));
+      __environ = NULL;
     }
+    exit(execvp(commandLine[0], (char *const *)commandLine));
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
