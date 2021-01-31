@@ -24,7 +24,7 @@
 # For more information, please refer to <http://unlicense.org/>
 
 project(process)
-cmake_minimum_required(VERSION 2.8.7)
+cmake_minimum_required(VERSION 3.15)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../)
 
@@ -64,9 +64,15 @@ if("${CMAKE_C_COMPILER_ID}" STREQUAL "GNU")
     COMPILE_FLAGS "-Wall -Wextra -Werror -std=gnu89"
   )
 elseif("${CMAKE_C_COMPILER_ID}" STREQUAL "Clang")
-  set_source_files_properties(main.c test.c PROPERTIES
-    COMPILE_FLAGS "-Wall -Wextra -Weverything -Werror -std=gnu89"
-  )
+  if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+    set_source_files_properties(main.c test.c PROPERTIES
+      COMPILE_FLAGS "/Wall /WX /wd4514 /wd5045"
+    )
+  else()
+    set_source_files_properties(main.c test.c PROPERTIES
+      COMPILE_FLAGS "-Wall -Wextra -Weverything -Werror -std=gnu89"
+    )
+  endif()
 elseif("${CMAKE_C_COMPILER_ID}" STREQUAL "MSVC")
   set_source_files_properties(main.c test.c PROPERTIES
     COMPILE_FLAGS "/Wall /WX /wd4514 /wd5045"
@@ -80,9 +86,15 @@ if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     COMPILE_FLAGS "-Wall -Wextra -Werror -Wpedantic"
   )
 elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
-  set_source_files_properties(test.cpp PROPERTIES
-    COMPILE_FLAGS "-Wall -Wextra -Weverything -Werror -Wpedantic -Wno-zero-as-null-pointer-constant"
-  )
+  if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+    set_source_files_properties(test.cpp PROPERTIES
+      COMPILE_FLAGS "/Wall /WX /wd4514 /wd5045"
+    )
+  else()
+    set_source_files_properties(test.cpp PROPERTIES
+      COMPILE_FLAGS "-Wall -Wextra -Weverything -Werror -Wpedantic"
+    )
+  endif()
 elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
   set_source_files_properties(test.cpp PROPERTIES
     COMPILE_FLAGS "/Wall /WX /wd4514 /wd5045"
@@ -91,16 +103,20 @@ else()
   message(WARNING "Unknown compiler '${CMAKE_C_COMPILER_ID}'!")
 endif()
 
-if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
-  add_executable(subprocess_mt_test
-    ../subprocess.h
-    utest.h
-    main.c
-    test.c
-    test.cpp
-    pre_windows.cpp
-    post_windows.cpp
-  )
+add_executable(subprocess_mt_test
+  ../subprocess.h
+  utest.h
+  main.c
+  test.c
+  test.cpp
+  pre_windows.cpp
+  post_windows.cpp
+)
 
-  target_compile_definitions(subprocess_mt_test PUBLIC "/MT")
+if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+  if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+    target_compile_options(subprocess_mt_test PUBLIC "/MT")
+  endif()
+elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
+  target_compile_options(subprocess_mt_test PUBLIC "/MT")
 endif()
