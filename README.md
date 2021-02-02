@@ -148,6 +148,30 @@ Then you must use the `subprocess_read_stdout` and `subprocess_read_stderr`
 helper functions to do any reading from either pipe. Note that these calls _may_
 block if there isn't any data ready to be read.
 
+### Using a Custom Process Environment
+
+The `subprocess_create_ex` entry-point contains an additional argument
+`environment`. This argument is an array of `FOO=BAR` pairs terminating in a
+`NULL` entry:
+
+```c
+const char *command_line[] = {"echo", "\"Hello, world!\"", NULL};
+const char *environment[] = {"FOO=BAR", "HAZ=BAZ", NULL};
+struct subprocess_s subprocess;
+int result = subprocess_create_ex(command_line, 0, environment, &subprocess);
+if (0 != result) {
+  // an error occurred!
+}
+```
+
+This lets you specify custom environments for spawned subprocesses.
+
+Note though that you **cannot** specify `subprocess_option_inherit_environment`
+with a custom environment. If you want to merge some custom environment with the
+parent process environment then its up to you as the user to query the original
+parent variables you want to pass to the child, and specify them in the spawned
+process' `environment`.
+
 ## FAQs
 
 ### Why does my spawned subprocess does not have internet process?
