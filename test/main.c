@@ -729,4 +729,83 @@ UTEST(create, subprocess_alive_then_join) {
   ASSERT_EQ(0, subprocess_destroy(&process));
 }
 
+UTEST(environment, illegal_inherit_environment) {
+  const char *const commandLine[] = {"./process_return_zero", 0};
+  const char *const environment[] = {"FOO=BAR", 0};
+  struct subprocess_s process;
+
+  ASSERT_NE(0, subprocess_create_ex(commandLine,
+                                    subprocess_option_inherit_environment,
+                                    environment, &process));
+}
+
+UTEST(environment, illegal_empty_environment_with_inherit_environment) {
+  const char *const commandLine[] = {"./process_return_zero", 0};
+  const char *const environment[] = {0};
+  struct subprocess_s process;
+
+  ASSERT_NE(0, subprocess_create_ex(commandLine,
+                                    subprocess_option_inherit_environment,
+                                    environment, &process));
+}
+
+UTEST(environment, null_environment_with_inherit_environment) {
+  const char *const commandLine[] = {"./process_return_zero", 0};
+  struct subprocess_s process;
+
+  ASSERT_EQ(0, subprocess_create_ex(commandLine,
+                                    subprocess_option_inherit_environment, 0,
+                                    &process));
+
+  ASSERT_EQ(0, subprocess_destroy(&process));
+}
+
+UTEST(environment, specify_environment) {
+  const char *const commandLine[] = {"./process_inherit_environment", 0};
+  const char *const environment[] = {"PROCESS_ENV_TEST=42", 0};
+  struct subprocess_s process;
+  int ret = -1;
+
+  ASSERT_EQ(0, subprocess_create_ex(commandLine, 0, environment, &process));
+
+  ASSERT_EQ(0, subprocess_join(&process, &ret));
+
+  ASSERT_EQ(42, ret);
+
+  ASSERT_EQ(0, subprocess_destroy(&process));
+}
+
+#ifndef _MSC_VER
+UTEST(executable_resolve, no_slashes_with_environment) {
+  const char *const commandLine[] = {"process_inherit_environment", 0};
+  const char *const environment[] = {"PROCESS_ENV_TEST=42", 0};
+  struct subprocess_s process;
+  int ret = -1;
+
+  ASSERT_EQ(0, subprocess_create_ex(commandLine, 0, environment, &process));
+
+  ASSERT_EQ(0, subprocess_join(&process, &ret));
+
+  ASSERT_EQ(42, ret);
+
+  ASSERT_EQ(0, subprocess_destroy(&process));
+}
+
+UTEST(executable_resolve, no_slashes_with_inherit) {
+  const char *const commandLine[] = {"process_inherit_environment", 0};
+  struct subprocess_s process;
+  int ret = -1;
+
+  ASSERT_EQ(0, subprocess_create_ex(commandLine,
+                                    subprocess_option_inherit_environment, 0,
+                                    &process));
+
+  ASSERT_EQ(0, subprocess_join(&process, &ret));
+
+  ASSERT_EQ(42, ret);
+
+  ASSERT_EQ(0, subprocess_destroy(&process));
+}
+#endif
+
 UTEST_MAIN()

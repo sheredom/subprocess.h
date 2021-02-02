@@ -80,6 +80,23 @@ subprocess_weak int subprocess_create(const char *const command_line[],
                                       int options,
                                       struct subprocess_s *const out_process);
 
+/// @brief Create a process (extended create).
+/// @param command_line An array of strings for the command line to execute for
+/// this process. The last element must be NULL to signify the end of the array.
+/// @param options A bit field of subprocess_option_e's to pass.
+/// @param environment An optional array of strings for the environment to use
+/// for a child process (each element of the form FOO=BAR). The last element
+/// must be NULL to signify the end of the array.
+/// @param out_process The newly created process.
+/// @return On success zero is returned.
+///
+/// If `options` contains `subprocess_option_inherit_environment`, then
+/// `environment` must be NULL.
+subprocess_weak int
+subprocess_create_ex(const char *const command_line[], int options,
+                     const char *const environment[],
+                     struct subprocess_s *const out_process);
+
 /// @brief Get the standard input file for a process.
 /// @param process The process to query.
 /// @return The file for standard input of the process.
@@ -396,6 +413,13 @@ int subprocess_create_named_pipe_helper(void **rd, void **wr) {
 
 int subprocess_create(const char *const commandLine[], int options,
                       struct subprocess_s *const out_process) {
+  return subprocess_create_ex(commandLine, options, SUBPROCESS_NULL,
+                              out_process);
+}
+
+int subprocess_create_ex(const char *const commandLine[], int options,
+                         const char *const environment[],
+                         struct subprocess_s *const out_process) {
 #if defined(_MSC_VER)
   int fd;
   void *rd, *wr;
@@ -407,7 +431,7 @@ int subprocess_create(const char *const commandLine[], int options,
   struct subprocess_subprocess_information_s processInfo;
   struct subprocess_security_attributes_s saAttr = {sizeof(saAttr),
                                                     SUBPROCESS_NULL, 1};
-  char *environment = SUBPROCESS_NULL;
+  char *used_environment = SUBPROCESS_NULL;
   struct subprocess_startup_info_s startInfo = {0,
                                                 SUBPROCESS_NULL,
                                                 SUBPROCESS_NULL,
@@ -432,7 +456,42 @@ int subprocess_create(const char *const commandLine[], int options,
 
   if (subprocess_option_inherit_environment !=
       (options & subprocess_option_inherit_environment)) {
-    environment = SUBPROCESS_CONST_CAST(char *, "\0\0");
+    if (SUBPROCESS_NULL == environment) {
+      used_environment = SUBPROCESS_CONST_CAST(char *, "\0\0");
+    } else {
+      // We always end with two null terminators.
+      len = 2;
+
+      for (i = 0; environment[i]; i++) {
+        for (j = 0; '\0' != environment[i][j]; j++) {
+          len++;
+        }
+
+        // For the null terminator too.
+        len++;
+      }
+
+      used_environment = SUBPROCESS_CAST(char *, _alloca(len));
+
+      // Re-use len for the insertion position
+      len = 0;
+
+      for (i = 0; environment[i]; i++) {
+        for (j = 0; '\0' != environment[i][j]; j++) {
+          used_environment[len++] = environment[i][j];
+        }
+
+        used_environment[len++] = '\0';
+      }
+
+      // End with the two null terminators.
+      used_environment[len++] = '\0';
+      used_environment[len++] = '\0';
+    }
+  } else {
+    if (SUBPROCESS_NULL != environment) {
+      return -1;
+    }
   }
 
   if (!CreatePipe(&rd, &wr, SUBPROCESS_PTR_CAST(LPSECURITY_ATTRIBUTES, &saAttr),
@@ -596,7 +655,7 @@ int subprocess_create(const char *const commandLine[], int options,
           SUBPROCESS_NULL,     // primary thread security attributes
           1,                   // handles are inherited
           0,                   // creation flags
-          environment,         // use parent's environment
+          used_environment,    // used environment
           SUBPROCESS_NULL,     // use parent's current directory
           SUBPROCESS_PTR_CAST(LPSTARTUPINFOA,
                               &startInfo), // STARTUPINFO pointer
@@ -627,6 +686,13 @@ int subprocess_create(const char *const commandLine[], int options,
   int stdoutfd[2];
   int stderrfd[2];
   pid_t child;
+
+  if (subprocess_option_inherit_environment ==
+      (options & subprocess_option_inherit_environment)) {
+    if (SUBPROCESS_NULL != environment) {
+      return -1;
+    }
+  }
 
   if (0 != pipe(stdinfd)) {
     return -1;
@@ -675,13 +741,19 @@ int subprocess_create(const char *const commandLine[], int options,
 #pragma clang diagnostic ignored "-Wcast-qual"
 #pragma clang diagnostic ignored "-Wold-style-cast"
 #endif
-    if (subprocess_option_inherit_environment !=
-        (options & subprocess_option_inherit_environment)) {
-      char *const environment[1] = {SUBPROCESS_NULL};
-      exit(execve(commandLine[0], (char *const *)commandLine, environment));
+
+    if (environment) {
+      exit(execve(commandLine[0], (char *const *)commandLine,
+                  (char *const *)environment));
+    } else if (subprocess_option_inherit_environment !=
+               (options & subprocess_option_inherit_environment)) {
+      char *const empty_environment[1] = {SUBPROCESS_NULL};
+      exit(execve(commandLine[0], (char *const *)commandLine,
+                  empty_environment));
     } else {
-      exit(execvp(commandLine[0], (char *const *)commandLine));
+      exit(execv(commandLine[0], (char *const *)commandLine));
     }
+
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
