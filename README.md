@@ -11,9 +11,9 @@ for C/C++.
 
 Just `#include "subprocess.h"` in your code!
 
-The current supported compilers are gcc, clang and msvc.
-
 The current supported platforms are Linux, macOS and Windows.
+
+The current supported compilers are gcc, clang, MSVC's cl.exe, and clang-cl.exe.
 
 ## Design
 
