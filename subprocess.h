@@ -456,9 +456,7 @@ int subprocess_create_ex(const char *const commandLine[], int options,
 
   if (subprocess_option_inherit_environment !=
       (options & subprocess_option_inherit_environment)) {
-    if (SUBPROCESS_NULL == environment) {
-      used_environment = SUBPROCESS_CONST_CAST(char *, "\0\0");
-    } else {
+    if (SUBPROCESS_NULL != environment) {
       // We always end with two null terminators.
       len = 2;
 
