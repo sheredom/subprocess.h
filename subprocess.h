@@ -63,7 +63,11 @@ enum subprocess_option_e {
   subprocess_option_inherit_environment = 0x2,
 
   // Enable asynchronous reading of stdout/stderr before it has completed.
-  subprocess_option_enable_async = 0x4
+  subprocess_option_enable_async = 0x4,
+
+  // Enable the child process to be spawned with no window visible if supported
+  // by the platform.
+  subprocess_option_no_window = 0x8
 };
 
 #if defined(__cplusplus)
@@ -426,8 +430,10 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   char *commandLineCombined;
   subprocess_size_t len;
   int i, j;
+  unsigned long flags = 0;
   const unsigned long startFUseStdHandles = 0x00000100;
   const unsigned long handleFlagInherit = 0x00000001;
+  const unsigned long createNoWindow = 0x08000000;
   struct subprocess_subprocess_information_s processInfo;
   struct subprocess_security_attributes_s saAttr = {sizeof(saAttr),
                                                     SUBPROCESS_NULL, 1};
@@ -453,6 +459,10 @@ int subprocess_create_ex(const char *const commandLine[], int options,
 
   startInfo.cb = sizeof(startInfo);
   startInfo.dwFlags = startFUseStdHandles;
+
+  if (subprocess_option_no_window != (options & subprocess_option_no_window)) {
+    flags |= createNoWindow;
+  }
 
   if (subprocess_option_inherit_environment !=
       (options & subprocess_option_inherit_environment)) {
@@ -654,7 +664,7 @@ int subprocess_create_ex(const char *const commandLine[], int options,
           SUBPROCESS_NULL,     // process security attributes
           SUBPROCESS_NULL,     // primary thread security attributes
           1,                   // handles are inherited
-          0,                   // creation flags
+          createNoWindow,      // creation flags
           used_environment,    // used environment
           SUBPROCESS_NULL,     // use parent's current directory
           SUBPROCESS_PTR_CAST(LPSTARTUPINFOA,

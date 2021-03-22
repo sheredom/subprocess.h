@@ -172,6 +172,24 @@ parent process environment then its up to you as the user to query the original
 parent variables you want to pass to the child, and specify them in the spawned
 process' `environment`.
 
+### Spawning a Process With No Window
+
+If the `options` argument of `subprocess_create` contains
+`subprocess_option_no_window` then, if the platform supports it, the process
+will be launched with no visible window.
+
+```c
+const char *command_line[] = {"echo", "\"Hello, world!\"", NULL};
+struct subprocess_s subprocess;
+int result = subprocess_create(command_line, subprocess_option_no_window, &subprocess);
+if (0 != result) {
+  // an error occurred!
+}
+```
+
+This option is _only required_ on Windows platforms at present if the behaviour
+is seeked for.
+
 ## FAQs
 
 ### Why does my spawned subprocess does not have internet process?
