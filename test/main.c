@@ -92,7 +92,7 @@ UTEST(create, subprocess_return_argc) {
 }
 
 UTEST(create, subprocess_return_argv) {
-  const char *const commandLine[] = {"./process_return_argv", "13", 0};
+  const char *const commandLine[] = {"./process_return_argv", "\n\r\n\r13", 0};
   struct subprocess_s process;
   int ret = -1;
 
@@ -807,5 +807,20 @@ UTEST(executable_resolve, no_slashes_with_inherit) {
   ASSERT_EQ(0, subprocess_destroy(&process));
 }
 #endif
+
+UTEST(create, subprocess_option_no_window) {
+  const char *const commandLine[] = {"./process_return_zero", 0};
+  struct subprocess_s process;
+  int ret = -1;
+
+  ASSERT_EQ(
+      0, subprocess_create(commandLine, subprocess_option_no_window, &process));
+
+  ASSERT_EQ(0, subprocess_join(&process, &ret));
+
+  ASSERT_EQ(0, ret);
+
+  ASSERT_EQ(0, subprocess_destroy(&process));
+}
 
 UTEST_MAIN()
