@@ -174,6 +174,14 @@ process' `environment`.
 
 ## FAQs
 
+### Why does my process not inherit the environment of the parent when `environment` is `NULL`?
+
+`subprocess_create` is subtly different from Windows' `CreateProcessA` in that
+when the `environment` is set to `NULL`, it'll launch the process with an
+empty environment. Users should use the `subprocess_option_inherit_environment`
+option to inherit the parent's environment. This is done to ensure that the
+safest defaults are used for launching processes.
+
 ### Why does my spawned subprocess does not have internet process?
 
 If you spawn a process that needs internet access then you will have to use the
