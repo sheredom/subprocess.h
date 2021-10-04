@@ -77,6 +77,8 @@ extern "C" {
 /// @brief Create a process.
 /// @param command_line An array of strings for the command line to execute for
 /// this process. The last element must be NULL to signify the end of the array.
+/// The memory backing this parameter only needs to persist until this function
+/// returns.
 /// @param options A bit field of subprocess_option_e's to pass.
 /// @param out_process The newly created process.
 /// @return On success zero is returned.
@@ -87,6 +89,8 @@ subprocess_weak int subprocess_create(const char *const command_line[],
 /// @brief Create a process (extended create).
 /// @param command_line An array of strings for the command line to execute for
 /// this process. The last element must be NULL to signify the end of the array.
+/// The memory backing this parameter only needs to persist until this function
+/// returns.
 /// @param options A bit field of subprocess_option_e's to pass.
 /// @param environment An optional array of strings for the environment to use
 /// for a child process (each element of the form FOO=BAR). The last element
