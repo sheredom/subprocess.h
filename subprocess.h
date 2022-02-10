@@ -35,6 +35,10 @@
 
 #if defined(_MSC_VER)
 #pragma warning(push, 1)
+
+/* disable warning: '__cplusplus' is not defined as a preprocessor macro,
+ * replacing with '0' for '#if/#elif' */
+#pragma warning(disable : 4668)
 #endif
 
 #include <stdio.h>
@@ -381,21 +385,16 @@ int subprocess_create_named_pipe_helper(void **rd, void **wr) {
   const long unique = index++;
 
 #if _MSC_VER < 1900
-#pragma warning(disable : 4996)
 #pragma warning(push, 1)
-
+#pragma warning(disable : 4996)
   _snprintf(name, sizeof(name) - 1,
             "\\\\.\\pipe\\sheredom_subprocess_h.%08lx.%08lx.%ld",
             GetCurrentProcessId(), GetCurrentThreadId(), unique);
-
 #pragma warning(pop)
 #else
-#pragma warning(disable : 4710)
-#pragma warning(push, 1)
   snprintf(name, sizeof(name) - 1,
            "\\\\.\\pipe\\sheredom_subprocess_h.%08lx.%08lx.%ld",
            GetCurrentProcessId(), GetCurrentThreadId(), unique);
-#pragma warning(pop)
 #endif
 
   *rd =
@@ -757,15 +756,15 @@ int subprocess_create_ex(const char *const commandLine[], int options,
 #endif
 
     if (environment) {
-      exit(execve(commandLine[0], (char *const *)commandLine,
-                  (char *const *)environment));
+      _Exit(execve(commandLine[0], (char *const *)commandLine,
+                   (char *const *)environment));
     } else if (subprocess_option_inherit_environment !=
                (options & subprocess_option_inherit_environment)) {
       char *const empty_environment[1] = {SUBPROCESS_NULL};
-      exit(execve(commandLine[0], (char *const *)commandLine,
-                  empty_environment));
+      _Exit(execve(commandLine[0], (char *const *)commandLine,
+                   empty_environment));
     } else {
-      exit(execv(commandLine[0], (char *const *)commandLine));
+      _Exit(execv(commandLine[0], (char *const *)commandLine));
     }
 
 #ifdef __clang__

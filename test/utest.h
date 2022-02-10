@@ -34,16 +34,11 @@
 #define SHEREDOM_UTEST_H_INCLUDED
 
 #ifdef _MSC_VER
-/*
-   Disable warning about not inlining 'inline' functions.
-*/
-#pragma warning(disable : 4710)
-
-/*
-   Disable warning about inlining functions that are not marked 'inline'.
-*/
-#pragma warning(disable : 4711)
 #pragma warning(push, 1)
+
+/* disable warning: '__cplusplus' is not defined as a preprocessor macro,
+ * replacing with '0' for '#if/#elif' */
+#pragma warning(disable : 4668)
 #endif
 
 #if defined(_MSC_VER) && (_MSC_VER < 1920)

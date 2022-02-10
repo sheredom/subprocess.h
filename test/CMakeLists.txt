@@ -59,6 +59,8 @@ add_executable(subprocess_test
   post_windows.cpp
 )
 
+set(MSVC_FLAGS "/Wall /WX /wd4514 /wd4710 /wd4711 /wd5045")
+
 if("${CMAKE_C_COMPILER_ID}" STREQUAL "GNU")
   set_source_files_properties(main.c test.c PROPERTIES
     COMPILE_FLAGS "-Wall -Wextra -Werror -std=gnu89"
@@ -66,7 +68,7 @@ if("${CMAKE_C_COMPILER_ID}" STREQUAL "GNU")
 elseif("${CMAKE_C_COMPILER_ID}" STREQUAL "Clang")
   if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
     set_source_files_properties(main.c test.c PROPERTIES
-      COMPILE_FLAGS "/Wall /WX /wd4514 /wd5045"
+      COMPILE_FLAGS "${MSVC_FLAGS}"
     )
   else()
     set_source_files_properties(main.c test.c PROPERTIES
@@ -75,7 +77,7 @@ elseif("${CMAKE_C_COMPILER_ID}" STREQUAL "Clang")
   endif()
 elseif("${CMAKE_C_COMPILER_ID}" STREQUAL "MSVC")
   set_source_files_properties(main.c test.c PROPERTIES
-    COMPILE_FLAGS "/Wall /WX /wd4514 /wd5045"
+    COMPILE_FLAGS "${MSVC_FLAGS}"
   )
 else()
   message(WARNING "Unknown compiler '${CMAKE_C_COMPILER_ID}'!")
@@ -88,7 +90,7 @@ if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
 elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
   if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
     set_source_files_properties(test.cpp PROPERTIES
-      COMPILE_FLAGS "/Wall /WX /wd4514 /wd5045"
+      COMPILE_FLAGS "${MSVC_FLAGS}"
     )
   else()
     set_source_files_properties(test.cpp PROPERTIES
@@ -97,7 +99,7 @@ elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
   endif()
 elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
   set_source_files_properties(test.cpp PROPERTIES
-    COMPILE_FLAGS "/Wall /WX /wd4514 /wd5045"
+    COMPILE_FLAGS "${MSVC_FLAGS}"
   )
 else()
   message(WARNING "Unknown compiler '${CMAKE_C_COMPILER_ID}'!")

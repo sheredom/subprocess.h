@@ -168,7 +168,7 @@ This lets you specify custom environments for spawned subprocesses.
 
 Note though that you **cannot** specify `subprocess_option_inherit_environment`
 with a custom environment. If you want to merge some custom environment with the
-parent process environment then its up to you as the user to query the original
+parent process environment then it is up to you as the user to query the original
 parent variables you want to pass to the child, and specify them in the spawned
 process' `environment`.
 
