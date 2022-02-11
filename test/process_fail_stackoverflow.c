@@ -6,6 +6,10 @@
 
 // This convoluted function returns 0
 // but will hopefully not be optimized away in release builds...
+
+#ifdef __clang__
+__attribute__((optnone))
+#endif
 int return_0_non_optimizable() {
   char buffer[100];
   long value = 62831853;
@@ -24,6 +28,9 @@ int return_0_non_optimizable() {
 }
 
 // this function is infinitely recursive and will cause a stack overflow
+#ifdef __clang__
+__attribute__((optnone))
+#endif
 int fun(int x) {
   if (x == 1)
     return 5;

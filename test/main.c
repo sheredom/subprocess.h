@@ -27,7 +27,8 @@
 
 #if defined(_MSC_VER)
 __declspec(dllimport) void __stdcall Sleep(unsigned long);
-__declspec(dllimport) int __stdcall SetEnvironmentVariableA(const char*, const char*);
+__declspec(dllimport) int __stdcall SetEnvironmentVariableA(const char *,
+                                                            const char *);
 #else
 #include <unistd.h>
 #endif
