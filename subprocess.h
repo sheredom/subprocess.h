@@ -463,7 +463,7 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   startInfo.cb = sizeof(startInfo);
   startInfo.dwFlags = startFUseStdHandles;
 
-  if (subprocess_option_no_window != (options & subprocess_option_no_window)) {
+  if (subprocess_option_no_window == (options & subprocess_option_no_window)) {
     flags |= createNoWindow;
   }
 
@@ -667,7 +667,7 @@ int subprocess_create_ex(const char *const commandLine[], int options,
           SUBPROCESS_NULL,     // process security attributes
           SUBPROCESS_NULL,     // primary thread security attributes
           1,                   // handles are inherited
-          createNoWindow,      // creation flags
+          flags,               // creation flags
           used_environment,    // used environment
           SUBPROCESS_NULL,     // use parent's current directory
           SUBPROCESS_PTR_CAST(LPSTARTUPINFOA,
