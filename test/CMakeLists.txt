@@ -53,17 +53,17 @@ foreach(name
           "$<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>"
           "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
   )
-  add_test(NAME "${name}" COMMAND "${name}")
+  #add_test(NAME "${name}" COMMAND "${name}")
 endforeach()
 
 add_executable(subprocess_test
-  ../subprocess.h
-  utest.h
-  main.c
-  test.c
-  test.cpp
-  pre_windows.cpp
-  post_windows.cpp
+  "${CMAKE_SOURCE_DIR}/subprocess.h"
+  "utest.h"
+  "main.c"
+  "test.c"
+  "test.cpp"
+  "pre_windows.cpp"
+  "post_windows.cpp"
 )
 target_include_directories(
         subprocess_test
@@ -71,6 +71,7 @@ target_include_directories(
         "$<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>"
         "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
 )
+add_test(NAME "subprocess_test" COMMAND "subprocess_test")
 
 #set(MSVC_FLAGS "/Wall /WX /wd4514 /wd4710 /wd4711 /wd5045")
 
@@ -119,13 +120,13 @@ target_include_directories(
 #endif()
 
 add_executable(subprocess_mt_test
-  ../subprocess.h
-  utest.h
-  main.c
-  test.c
-  test.cpp
-  pre_windows.cpp
-  post_windows.cpp
+  "${CMAKE_SOURCE_DIR}/subprocess.h"
+  "utest.h"
+  "main.c"
+  "test.c"
+  "test.cpp"
+  "pre_windows.cpp"
+  "post_windows.cpp"
 )
 target_include_directories(
         subprocess_mt_test
@@ -133,6 +134,7 @@ target_include_directories(
         "$<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>"
         "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
 )
+add_test(NAME "subprocess_mt_test" COMMAND "subprocess_mt_test")
 
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
   if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")

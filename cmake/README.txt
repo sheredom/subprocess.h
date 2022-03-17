@@ -1,6 +1,6 @@
 subprocess.h
 
-Very simple HTTPS interface built atop libcurl.
+A simple one header solution to launching processes and interacting with them.
 
 ------------------------------------------------------------------------
 
