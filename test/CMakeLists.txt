@@ -57,7 +57,6 @@ foreach(name
 endforeach()
 
 add_executable(subprocess_test
-  "${CMAKE_SOURCE_DIR}/subprocess.h"
   "utest.h"
   "main.c"
   "test.c"
@@ -65,11 +64,18 @@ add_executable(subprocess_test
   "pre_windows.cpp"
   "post_windows.cpp"
 )
+target_link_libraries(subprocess_test PRIVATE "${PROJECT_NAME}")
 target_include_directories(
         subprocess_test
         PRIVATE
         "$<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>"
         "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
+)
+set_target_properties(
+        subprocess_test
+        PROPERTIES
+        LINKER_LANGUAGE
+        C
 )
 add_test(NAME "subprocess_test" COMMAND "subprocess_test")
 
@@ -120,7 +126,6 @@ add_test(NAME "subprocess_test" COMMAND "subprocess_test")
 #endif()
 
 add_executable(subprocess_mt_test
-  "${CMAKE_SOURCE_DIR}/subprocess.h"
   "utest.h"
   "main.c"
   "test.c"
@@ -128,18 +133,25 @@ add_executable(subprocess_mt_test
   "pre_windows.cpp"
   "post_windows.cpp"
 )
+target_link_libraries(subprocess_mt_test PRIVATE "${PROJECT_NAME}")
 target_include_directories(
         subprocess_mt_test
         PRIVATE
         "$<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>"
         "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
 )
+set_target_properties(
+        subprocess_mt_test
+        PROPERTIES
+        LINKER_LANGUAGE
+        C
+)
 add_test(NAME "subprocess_mt_test" COMMAND "subprocess_mt_test")
 
-if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
   if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
     target_compile_options(subprocess_mt_test PUBLIC "/MT")
   endif()
-elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
   target_compile_options(subprocess_mt_test PUBLIC "/MT")
 endif()

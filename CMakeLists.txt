@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.3)
-project(subprocess_h VERSION 0.0.1 LANGUAGES C)
+project(subprocess_h VERSION 0.0.1 LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 90)
 set(CMAKE_C_VISIBILITY_PRESET hidden)
@@ -35,6 +35,12 @@ configure_file(
 )
 
 add_library("${PROJECT_NAME}" INTERFACE "subprocess.h")
+set_target_properties(
+        "${PROJECT_NAME}"
+        PROPERTIES
+        LINKER_LANGUAGE
+        C
+)
 
 # setup the version numbering
 set_property(TARGET "${PROJECT_NAME}" PROPERTY VERSION "1.0.0")
