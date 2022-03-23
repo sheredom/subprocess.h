@@ -341,11 +341,21 @@ __declspec(dllimport) int __stdcall GetOverlappedResult(void *, LPOVERLAPPED,
 #define SUBPROCESS_DLLIMPORT
 #endif
 
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+#endif
+
 SUBPROCESS_DLLIMPORT int __cdecl _fileno(FILE *);
 SUBPROCESS_DLLIMPORT int __cdecl _open_osfhandle(subprocess_intptr_t, int);
 SUBPROCESS_DLLIMPORT subprocess_intptr_t __cdecl _get_osfhandle(int);
 
 void *__cdecl _alloca(subprocess_size_t);
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
+
 #else
 typedef size_t subprocess_size_t;
 #endif
