@@ -236,10 +236,19 @@ typedef intptr_t subprocess_intptr_t;
 typedef size_t subprocess_size_t;
 #endif
 
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+#endif
+
 typedef struct _PROCESS_INFORMATION *LPPROCESS_INFORMATION;
 typedef struct _SECURITY_ATTRIBUTES *LPSECURITY_ATTRIBUTES;
 typedef struct _STARTUPINFOA *LPSTARTUPINFOA;
 typedef struct _OVERLAPPED *LPOVERLAPPED;
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 
 #pragma warning(push, 1)
 struct subprocess_subprocess_information_s {
