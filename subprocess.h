@@ -452,6 +452,7 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   char *commandLineCombined;
   subprocess_size_t len;
   int i, j;
+  int need_quoting;
   unsigned long flags = 0;
   const unsigned long startFUseStdHandles = 0x00000100;
   const unsigned long handleFlagInherit = 0x00000001;
@@ -622,8 +623,12 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   // Combine commandLine together into a single string
   len = 0;
   for (i = 0; commandLine[i]; i++) {
-    // For the ' ' and two '"' between items and trailing '\0'
-    len += 3;
+    // for the trailing \0
+    len++;
+
+    // Quote the argument if it has a space in it
+    if (strpbrk(commandLine[i], "\t\v ") != NULL)
+      len += 2;
 
     for (j = 0; '\0' != commandLine[i][j]; j++) {
       switch (commandLine[i][j]) {
@@ -656,7 +661,11 @@ int subprocess_create_ex(const char *const commandLine[], int options,
     if (0 != i) {
       commandLineCombined[len++] = ' ';
     }
-    commandLineCombined[len++] = '"';
+
+    need_quoting = strpbrk(commandLine[i], "\t\v ") != NULL;
+    if (need_quoting) {
+      commandLineCombined[len++] = '"';
+    }
 
     for (j = 0; '\0' != commandLine[i][j]; j++) {
       switch (commandLine[i][j]) {
@@ -675,7 +684,9 @@ int subprocess_create_ex(const char *const commandLine[], int options,
 
       commandLineCombined[len++] = commandLine[i][j];
     }
-    commandLineCombined[len++] = '"';
+    if (need_quoting) {
+      commandLineCombined[len++] = '"';
+    }
   }
 
   commandLineCombined[len] = '\0';
