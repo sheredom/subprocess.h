@@ -71,7 +71,10 @@ enum subprocess_option_e {
 
   // Enable the child process to be spawned with no window visible if supported
   // by the platform.
-  subprocess_option_no_window = 0x8
+  subprocess_option_no_window = 0x8,
+
+  // Search for program names in the PATH variable. Always enabled on Windows.
+  subprocess_option_search_user_path = 0x10
 };
 
 #if defined(__cplusplus)
@@ -718,6 +721,8 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   int stdoutfd[2];
   int stderrfd[2];
   pid_t child;
+  extern char** environ;
+  char *const empty_environment[1] = {SUBPROCESS_NULL};
 
   if (subprocess_option_inherit_environment ==
       (options & subprocess_option_inherit_environment)) {
@@ -775,14 +780,17 @@ int subprocess_create_ex(const char *const commandLine[], int options,
 #endif
 
     if (environment) {
-      _Exit(execve(commandLine[0], (char *const *)commandLine,
-                   (char *const *)environment));
-    } else if (subprocess_option_inherit_environment !=
-               (options & subprocess_option_inherit_environment)) {
-      char *const empty_environment[1] = {SUBPROCESS_NULL};
-      _Exit(execve(commandLine[0], (char *const *)commandLine,
-                   empty_environment));
-    } else {
+      environ = (char **)environment;
+    }
+    else if (subprocess_option_inherit_environment != 
+             (options & subprocess_option_inherit_environment)) {
+      environ = (char **)empty_environment;
+    }
+
+    if (subprocess_option_search_user_path == (options & subprocess_option_search_user_path)) {
+      _Exit(execvp(commandLine[0], (char *const *)commandLine));  
+    }
+    else {
       _Exit(execv(commandLine[0], (char *const *)commandLine));
     }
 
