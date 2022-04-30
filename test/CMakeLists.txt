@@ -48,6 +48,7 @@ add_executable(process_stdout_data process_stdout_data.c)
 add_executable(process_stdout_poll process_stdout_poll.c)
 add_executable(process_stderr_poll process_stderr_poll.c)
 add_executable(process_stdout_large process_stdout_large.c)
+add_executable(process_call_return_argc process_call_return_argc.c)
 
 add_executable(subprocess_test
   ../subprocess.h
