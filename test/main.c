@@ -810,30 +810,37 @@ UTEST(executable_resolve, custom_search_path) {
   char current_path[4096];
   char path_var[4096 + 5];
   const char *environment[2] = {0 /* placeholder */, 0};
-  const char *const commandLine[] = {"process_return_argc", "onearg", 0};
+  const char *const commandLine[] = {"process_call_return_argc", 0};
   struct subprocess_s process;
   int ret = -1;
 
-  // Save the current PATH and change it to / so it will only
-  // work if the executable is found in the PATH variable.
-  ASSERT_NE(NULL, getcwd (current_path, sizeof(current_path)));
-  ASSERT_EQ(0, chdir ("/"));
+  ASSERT_NE(NULL, getcwd(current_path, sizeof(current_path)));
 
   // Set the PATH=current_path env variable
-  snprintf (path_var, sizeof(path_var), "PATH=%s", current_path);
+  snprintf(path_var, sizeof(path_var), "PATH=%s", current_path);
   environment[0] = path_var;
 
-  ASSERT_EQ(0, subprocess_create_ex(commandLine, 
-                                    subprocess_option_search_user_path, 
-                                    environment, &process));
+  ASSERT_EQ(0, subprocess_create_ex(commandLine, 0, environment, &process));
 
   ASSERT_EQ(0, subprocess_join(&process, &ret));
 
   ASSERT_EQ(2, ret);
 
   ASSERT_EQ(0, subprocess_destroy(&process));
+}
 
-  ASSERT_EQ(0, chdir (current_path));
+UTEST(executable_resolve, missing_from_path) {
+  const char *const commandLine[] = {"process_call_return_argc", 0};
+  struct subprocess_s process;
+  int ret = -1;
+
+  ASSERT_EQ(0, subprocess_create(commandLine, 0, &process));
+
+  ASSERT_EQ(0, subprocess_join(&process, &ret));
+
+  ASSERT_NE(2, ret);
+
+  ASSERT_EQ(0, subprocess_destroy(&process));
 }
 
 UTEST(executable_resolve, default_search_path) {
@@ -842,8 +849,7 @@ UTEST(executable_resolve, default_search_path) {
   int ret = -1;
 
   ASSERT_EQ(0, subprocess_create(commandLine,
-                                 subprocess_option_search_user_path,
-                                 &process));
+                                 subprocess_option_search_user_path, &process));
 
   ASSERT_EQ(0, subprocess_join(&process, &ret));
 

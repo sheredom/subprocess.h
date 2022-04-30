@@ -74,6 +74,8 @@ enum subprocess_option_e {
   subprocess_option_no_window = 0x8,
 
   // Search for program names in the PATH variable. Always enabled on Windows.
+  // Note: this will **not** search for paths in any provided custom environment
+  // and instead uses the PATH of the spawning process.
   subprocess_option_search_user_path = 0x10
 };
 
@@ -216,6 +218,7 @@ subprocess_weak int subprocess_alive(struct subprocess_s *const process);
 
 #if !defined(_MSC_VER)
 #include <signal.h>
+#include <spawn.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -721,8 +724,10 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   int stdoutfd[2];
   int stderrfd[2];
   pid_t child;
-  extern char** environ;
+  extern char **environ;
   char *const empty_environment[1] = {SUBPROCESS_NULL};
+  posix_spawn_file_actions_t actions;
+  char *const *used_environment;
 
   if (subprocess_option_inherit_environment ==
       (options & subprocess_option_inherit_environment)) {
@@ -746,85 +751,124 @@ int subprocess_create_ex(const char *const commandLine[], int options,
     }
   }
 
-  child = fork();
+  if (environment) {
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wcast-qual"
+#pragma clang diagnostic ignored "-Wold-style-cast"
+#endif
+    used_environment = (char *const *)environment;
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
+  } else if (subprocess_option_inherit_environment ==
+             (options & subprocess_option_inherit_environment)) {
+    used_environment = environ;
+  } else {
+    used_environment = empty_environment;
+  }
 
-  if (-1 == child) {
+  if (0 != posix_spawn_file_actions_init(&actions)) {
     return -1;
   }
 
-  if (0 == child) {
-    // Close the stdin write end
-    close(stdinfd[1]);
-    // Map the read end to stdin
-    dup2(stdinfd[0], STDIN_FILENO);
+  // Close the stdin write end
+  if (0 != posix_spawn_file_actions_addclose(&actions, stdinfd[1])) {
+    posix_spawn_file_actions_destroy(&actions);
+    return -1;
+  }
 
-    // Close the stdout read end
-    close(stdoutfd[0]);
-    // Map the write end to stdout
-    dup2(stdoutfd[1], STDOUT_FILENO);
+  // Map the read end to stdin
+  if (0 !=
+      posix_spawn_file_actions_adddup2(&actions, stdinfd[0], STDIN_FILENO)) {
+    posix_spawn_file_actions_destroy(&actions);
+    return -1;
+  }
 
-    if (subprocess_option_combined_stdout_stderr ==
-        (options & subprocess_option_combined_stdout_stderr)) {
-      dup2(STDOUT_FILENO, STDERR_FILENO);
-    } else {
-      // Close the stderr read end
-      close(stderrfd[0]);
-      // Map the write end to stdout
-      dup2(stderrfd[1], STDERR_FILENO);
+  // Close the stdout read end
+  if (0 != posix_spawn_file_actions_addclose(&actions, stdoutfd[0])) {
+    posix_spawn_file_actions_destroy(&actions);
+    return -1;
+  }
+
+  // Map the write end to stdout
+  if (0 !=
+      posix_spawn_file_actions_adddup2(&actions, stdoutfd[1], STDOUT_FILENO)) {
+    posix_spawn_file_actions_destroy(&actions);
+    return -1;
+  }
+
+  if (subprocess_option_combined_stdout_stderr ==
+      (options & subprocess_option_combined_stdout_stderr)) {
+    if (0 != posix_spawn_file_actions_adddup2(&actions, STDOUT_FILENO,
+                                              STDERR_FILENO)) {
+      posix_spawn_file_actions_destroy(&actions);
+      return -1;
     }
+  } else {
+    // Close the stderr read end
+    if (0 != posix_spawn_file_actions_addclose(&actions, stderrfd[0])) {
+      posix_spawn_file_actions_destroy(&actions);
+      return -1;
+    }
+    // Map the write end to stdout
+    if (0 != posix_spawn_file_actions_adddup2(&actions, stderrfd[1],
+                                              STDERR_FILENO)) {
+      posix_spawn_file_actions_destroy(&actions);
+      return -1;
+    }
+  }
 
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wcast-qual"
 #pragma clang diagnostic ignored "-Wold-style-cast"
 #endif
-
-    if (environment) {
-      environ = (char **)environment;
+  if (subprocess_option_search_user_path ==
+      (options & subprocess_option_search_user_path)) {
+    if (0 != posix_spawnp(&child, commandLine[0], &actions, SUBPROCESS_NULL,
+                          (char *const *)commandLine, used_environment)) {
+      posix_spawn_file_actions_destroy(&actions);
+      return -1;
     }
-    else if (subprocess_option_inherit_environment != 
-             (options & subprocess_option_inherit_environment)) {
-      environ = (char **)empty_environment;
+  } else {
+    if (0 != posix_spawn(&child, commandLine[0], &actions, SUBPROCESS_NULL,
+                         (char *const *)commandLine, used_environment)) {
+      posix_spawn_file_actions_destroy(&actions);
+      return -1;
     }
-
-    if (subprocess_option_search_user_path == (options & subprocess_option_search_user_path)) {
-      _Exit(execvp(commandLine[0], (char *const *)commandLine));  
-    }
-    else {
-      _Exit(execv(commandLine[0], (char *const *)commandLine));
-    }
-
+  }
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
+
+  // Close the stdin read end
+  close(stdinfd[0]);
+  // Store the stdin write end
+  out_process->stdin_file = fdopen(stdinfd[1], "wb");
+
+  // Close the stdout write end
+  close(stdoutfd[1]);
+  // Store the stdout read end
+  out_process->stdout_file = fdopen(stdoutfd[0], "rb");
+
+  if (subprocess_option_combined_stdout_stderr ==
+      (options & subprocess_option_combined_stdout_stderr)) {
+    out_process->stderr_file = out_process->stdout_file;
   } else {
-    // Close the stdin read end
-    close(stdinfd[0]);
-    // Store the stdin write end
-    out_process->stdin_file = fdopen(stdinfd[1], "wb");
-
-    // Close the stdout write end
-    close(stdoutfd[1]);
-    // Store the stdout read end
-    out_process->stdout_file = fdopen(stdoutfd[0], "rb");
-
-    if (subprocess_option_combined_stdout_stderr ==
-        (options & subprocess_option_combined_stdout_stderr)) {
-      out_process->stderr_file = out_process->stdout_file;
-    } else {
-      // Close the stderr write end
-      close(stderrfd[1]);
-      // Store the stderr read end
-      out_process->stderr_file = fdopen(stderrfd[0], "rb");
-    }
-
-    // Store the child's pid
-    out_process->child = child;
-
-    out_process->alive = 1;
-
-    return 0;
+    // Close the stderr write end
+    close(stderrfd[1]);
+    // Store the stderr read end
+    out_process->stderr_file = fdopen(stderrfd[0], "rb");
   }
+
+  // Store the child's pid
+  out_process->child = child;
+
+  out_process->alive = 1;
+
+  posix_spawn_file_actions_destroy(&actions);
+  return 0;
 #endif
 }
 
