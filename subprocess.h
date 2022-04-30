@@ -42,6 +42,7 @@
 #endif
 
 #include <stdio.h>
+#include <string.h>
 
 #if defined(_MSC_VER)
 #pragma warning(pop)
