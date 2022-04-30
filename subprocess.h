@@ -628,7 +628,7 @@ int subprocess_create_ex(const char *const commandLine[], int options,
     len++;
 
     // Quote the argument if it has a space in it
-    if (strpbrk(commandLine[i], "\t\v ") != NULL)
+    if (strpbrk(commandLine[i], "\t\v ") != SUBPROCESS_NULL)
       len += 2;
 
     for (j = 0; '\0' != commandLine[i][j]; j++) {
@@ -663,7 +663,7 @@ int subprocess_create_ex(const char *const commandLine[], int options,
       commandLineCombined[len++] = ' ';
     }
 
-    need_quoting = strpbrk(commandLine[i], "\t\v ") != NULL;
+    need_quoting = strpbrk(commandLine[i], "\t\v ") != SUBPROCESS_NULL;
     if (need_quoting) {
       commandLineCombined[len++] = '"';
     }
