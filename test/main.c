@@ -293,8 +293,6 @@ UTEST(create, subprocess_return_lpcmdline) {
   char temp[32767];
   const char compare[28] = "noquotes \"should be quoted\"";
 
-    // checking from the back is much easier as it skips the exe name
-
   ASSERT_EQ(0, subprocess_create(commandLine, 0, &process));
 
   ASSERT_EQ(0, subprocess_join(&process, &ret));
