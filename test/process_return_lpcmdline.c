@@ -25,7 +25,11 @@
 
 #include <stdio.h>
 #include <string.h>
+
+#ifdef _MSC_VER
 #include <windows.h>
+#endif
+
 int main(int argc, const char *const argv[]) {
 #ifdef _MSC_VER
   printf("%s", GetCommandLineA());
@@ -34,9 +38,9 @@ int main(int argc, const char *const argv[]) {
     if (strpbrk(argv[i], "\t\n\v ") != NULL)
       printf("\"%s\"", argv[i]);
     else
-      puts(argv[i]);
+      printf("%s", argv[i]);
     if (i != (argc-1))
-      puts(" ");
+      printf(" ");
   }
 #endif
   return 0;
