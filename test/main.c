@@ -283,6 +283,43 @@ UTEST(create, subprocess_return_special_argv) {
   ASSERT_EQ(0, subprocess_destroy(&process));
 }
 
+UTEST(create, subprocess_return_lpcmdline) {
+  const char *const commandLine[] = {"./process_return_lpcmdline",
+                                     "noquotes", "should be quoted", 0};
+  struct subprocess_s process;
+  int ret = -1;
+  size_t cmp_index, index;
+  FILE *stdout_file;
+  char temp[32767];
+  const char compare[28] = "noquotes \"should be quoted\"";
+
+    // checking from the back is much easier as it skips the exe name
+
+  ASSERT_EQ(0, subprocess_create(commandLine, 0, &process));
+
+  ASSERT_EQ(0, subprocess_join(&process, &ret));
+
+  ASSERT_EQ(0, ret);
+
+  stdout_file = subprocess_stdout(&process);
+  ASSERT_TRUE(stdout_file);
+
+  ASSERT_TRUE(fgets(temp, 32767, stdout_file));
+
+  // comparing from the back skips exe name
+  cmp_index = strlen(compare) - 1;
+  for (index = strlen(temp) - 1; index != 0 && cmp_index != 0; index--,cmp_index--) {
+    if (temp[index] != compare[cmp_index])
+      ASSERT_TRUE(0);
+  }
+  ASSERT_TRUE(1);
+
+  ASSERT_FALSE(fgets(temp, 16, stdout_file)); // should be at EOF now
+  ASSERT_TRUE(feof(stdout_file));
+
+  ASSERT_EQ(0, subprocess_destroy(&process));
+}
+
 UTEST(create, subprocess_combined_stdout_stderr) {
   const char *const commandLine[] = {"./process_combined_stdout_stderr", 0};
   struct subprocess_s process;
