@@ -428,7 +428,7 @@ int subprocess_create_named_pipe_helper(void **rd, void **wr) {
                        pipeTypeByte | pipeWait, 1, 4096, 4096, SUBPROCESS_NULL,
                        SUBPROCESS_PTR_CAST(LPSECURITY_ATTRIBUTES, &saAttr));
 
-  if (invalidHandleValue == rd) {
+  if (invalidHandleValue == *rd) {
     return -1;
   }
 
@@ -436,7 +436,7 @@ int subprocess_create_named_pipe_helper(void **rd, void **wr) {
                     SUBPROCESS_PTR_CAST(LPSECURITY_ATTRIBUTES, &saAttr),
                     openExisting, fileAttributeNormal, SUBPROCESS_NULL);
 
-  if (invalidHandleValue == wr) {
+  if (invalidHandleValue == *wr) {
     return -1;
   }
 
