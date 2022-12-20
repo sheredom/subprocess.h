@@ -66,7 +66,12 @@ typedef uint64_t utest_uint64_t;
 #define UTEST_C_FUNC
 #endif
 
-#if defined(_MSC_VER)
+#if defined(_WIN32)
+#ifdef __MINGW32__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+#endif
+
 typedef union {
   struct {
     unsigned long LowPart;
@@ -78,6 +83,10 @@ typedef union {
   } u;
   utest_int64_t QuadPart;
 } utest_large_integer;
+
+#ifdef __MINGW32__
+#pragma GCC diagnostic pop
+#endif
 
 UTEST_C_FUNC __declspec(dllimport) int __stdcall QueryPerformanceCounter(
     utest_large_integer *);
@@ -204,7 +213,7 @@ UTEST_C_FUNC __declspec(dllimport) int __stdcall QueryPerformanceFrequency(
 #endif
 
 static UTEST_INLINE utest_int64_t utest_ns(void) {
-#ifdef _MSC_VER
+#ifdef _WIN32
   utest_large_integer counter;
   utest_large_integer frequency;
   QueryPerformanceCounter(&counter);
