@@ -2,7 +2,7 @@ name: CMake
 
 on:
   push:
-    branches: [ master ]
+    branches: [ "*" ]
   pull_request:
     branches: [ master ]
 
@@ -15,7 +15,6 @@ jobs:
         compiler: [default, clang, gcc]
         exclude:
           - {os: "macOS-latest", compiler: "clang"}
-          - {os: "windows-latest", compiler: "gcc"}
           - {os: "macOS-latest", compiler: "gcc"}
           - {os: "ubuntu-latest", compiler: "default"}
           - {os: "ubuntu-latest", compiler: "default"}
@@ -27,9 +26,13 @@ jobs:
     - name: Create Build Environment
       run: cmake -E make_directory ${{github.workspace}}/build
 
-    - name: Setup dependencies
+    - name: Setup dependencies (Ubuntu)
       if: startsWith(matrix.os, 'ubuntu')
-      run: sudo apt-get install -y gcc-10 g++-10 clang-10
+      run: sudo apt-get install -y gcc-10 g++-10 clang
+
+    - name: Setup dependencies (MinGW)
+      if: matrix.compiler == 'gcc' && startsWith(matrix.os, 'windows')
+      uses: egor-tensin/setup-mingw@v2
 
     - name: Configure CMake
       shell: bash
@@ -39,15 +42,21 @@ jobs:
 
     - name: Configure CMake with GCC
       shell: bash
-      if: matrix.compiler == 'gcc'
+      if: matrix.compiler == 'gcc' && startsWith(matrix.os, 'ubuntu')
       working-directory: ${{github.workspace}}/build
       run: cmake $GITHUB_WORKSPACE/test -DCMAKE_BUILD_TYPE=${{ matrix.type }} -DCMAKE_C_COMPILER=gcc-10 -DCMAKE_CXX_COMPILER=g++-10
+
+    - name: Configure CMake with MinGW
+      shell: bash
+      if: matrix.compiler == 'gcc' && startsWith(matrix.os, 'windows')
+      working-directory: ${{github.workspace}}/build
+      run: cmake $GITHUB_WORKSPACE/test -DCMAKE_BUILD_TYPE=${{ matrix.type }} -G "MinGW Makefiles" -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++
 
     - name: Configure CMake with Clang (Ubuntu)
       shell: bash
       if: (matrix.compiler == 'clang') && startsWith(matrix.os, 'ubuntu')
       working-directory: ${{github.workspace}}/build
-      run: cmake $GITHUB_WORKSPACE/test -DCMAKE_BUILD_TYPE=${{ matrix.type }} -DCMAKE_C_COMPILER=clang-10 -DCMAKE_CXX_COMPILER=clang++-10
+      run: cmake $GITHUB_WORKSPACE/test -DCMAKE_BUILD_TYPE=${{ matrix.type }} -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
 
     - name: Configure CMake with Clang (Windows)
       shell: bash
@@ -63,10 +72,10 @@ jobs:
     - name: Test
       working-directory: ${{github.workspace}}/build
       shell: bash
-      run: if [ "${{ matrix.os }}" == "windows-latest" ]; then cd ${{ matrix.type }}; fi; ./subprocess_test
+      run: if [ "${{ matrix.os }}" == "windows-latest" ] && [ "${{ matrix.compiler }}" != "gcc" ]; then cd ${{ matrix.type }}; fi; ./subprocess_test
 
     - name: Test with Multithreading
       working-directory: ${{github.workspace}}/build
       shell: bash
       if: startsWith(matrix.os, 'windows')
-      run: if [ "${{ matrix.os }}" == "windows-latest" ]; then cd ${{ matrix.type }}; fi; ./subprocess_mt_test
+      run: if [ "${{ matrix.os }}" == "windows-latest" ] && [ "${{ matrix.compiler }}" != "gcc" ]; then cd ${{ matrix.type }}; fi; ./subprocess_mt_test
