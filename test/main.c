@@ -811,7 +811,7 @@ UTEST(environment, specify_environment) {
   ASSERT_EQ(0, subprocess_destroy(&process));
 }
 
-#ifndef _MSC_VER
+#if !defined(_MSC_VER)
 UTEST(executable_resolve, no_slashes_with_environment) {
   const char *const commandLine[] = {"process_inherit_environment", 0};
   const char *const environment[] = {"PROCESS_ENV_TEST=42", 0};
@@ -826,7 +826,9 @@ UTEST(executable_resolve, no_slashes_with_environment) {
 
   ASSERT_EQ(0, subprocess_destroy(&process));
 }
+#endif
 
+#if !defined(_MSC_VER) && !defined(__MINGW32__)
 UTEST(executable_resolve, no_slashes_with_inherit) {
   const char *const commandLine[] = {"process_inherit_environment", 0};
   struct subprocess_s process;
@@ -840,7 +842,9 @@ UTEST(executable_resolve, no_slashes_with_inherit) {
 
   ASSERT_EQ(42, ret);
 }
+#endif
 
+#if !defined(_MSC_VER)
 UTEST(executable_resolve, custom_search_path) {
   char current_path[4096];
   char path_var[4096 + 5];
@@ -863,7 +867,9 @@ UTEST(executable_resolve, custom_search_path) {
 
   ASSERT_EQ(0, subprocess_destroy(&process));
 }
+#endif
 
+#if !defined(_MSC_VER) && !defined(__MINGW32__)
 UTEST(executable_resolve, missing_from_path) {
   const char *const commandLine[] = {"process_call_return_argc", 0};
   struct subprocess_s process;
@@ -877,7 +883,9 @@ UTEST(executable_resolve, missing_from_path) {
 
   ASSERT_EQ(0, subprocess_destroy(&process));
 }
+#endif
 
+#if !defined(_MSC_VER)
 UTEST(executable_resolve, default_search_path) {
   const char *const commandLine[] = {"ls", 0};
   struct subprocess_s process;
