@@ -224,6 +224,7 @@ subprocess_weak int subprocess_alive(struct subprocess_s *const process);
 #endif
 
 #if !defined(_WIN32)
+#include <fcntl.h>
 #include <signal.h>
 #include <spawn.h>
 #include <stdlib.h>
@@ -757,6 +758,7 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   int stdinfd[2];
   int stdoutfd[2];
   int stderrfd[2];
+  int fd, fd_flags;
   pid_t child;
   extern char **environ;
   char *const empty_environment[1] = {SUBPROCESS_NULL};
@@ -885,6 +887,13 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   close(stdoutfd[1]);
   // Store the stdout read end
   out_process->stdout_file = fdopen(stdoutfd[0], "rb");
+
+  // Should we use async behaviour ?
+  if(options & subprocess_option_enable_async){
+    fd = fileno(out_process->stdout_file);
+    fd_flags = fcntl(fd, F_GETFL, 0);
+    fcntl(fd, F_SETFL, fd_flags | O_NONBLOCK);
+  }
 
   if (subprocess_option_combined_stdout_stderr ==
       (options & subprocess_option_combined_stdout_stderr)) {
