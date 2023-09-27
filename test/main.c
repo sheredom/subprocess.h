@@ -643,6 +643,38 @@ UTEST(subprocess, read_stdout_async) {
   ASSERT_EQ(ret, 0);
 }
 
+UTEST(subprocess, read_stdout_async_nodata) {
+  const char *const commandLine[] = {"./process_stdout_poll_nodata", 0};
+  struct subprocess_s process;
+  int ret = -1;
+  static char data[14 + 1] = {0};
+  unsigned index = 0;
+  unsigned bytes_read = 0;
+
+  ASSERT_EQ(0, subprocess_create(commandLine, subprocess_option_enable_async,
+                                 &process));
+
+  while(subprocess_alive(&process)) {
+    bytes_read = subprocess_read_stdout(&process, data + index,
+                                        sizeof(data) - 1 - index);
+    index += bytes_read;
+
+    // Send any character to the subprocess to tell it to pursuit
+    if (bytes_read == 0) {
+      fputc('s', subprocess_stdin(&process));
+      fflush(subprocess_stdin(&process));
+    }
+  }
+
+  ASSERT_EQ(15u, bytes_read);
+  ASSERT_EQ(15u, index);
+  ASSERT_TRUE(0 == memcmp("Hello, world!", data, 14));
+
+  ASSERT_EQ(0, subprocess_join(&process, &ret));
+  ASSERT_EQ(0, subprocess_destroy(&process));
+  ASSERT_EQ(ret, 0);
+}
+
 UTEST(subprocess, poll_stdout_async) {
   const char *const commandLine[] = {"./process_stdout_poll", "16384", 0};
   struct subprocess_s process;
