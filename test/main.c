@@ -594,11 +594,11 @@ UTEST(subprocess, read_stdout_async_small) {
   ASSERT_EQ(0, subprocess_create(commandLine, subprocess_option_enable_async,
                                  &process));
 
-  do {
+  while(subprocess_alive(&process)) {
     bytes_read = subprocess_read_stdout(&process, data + index,
                                         sizeof(data) - 1 - index);
     index += bytes_read;
-  } while (bytes_read != 0);
+  }
 
   ASSERT_EQ(13u, index);
 
@@ -624,11 +624,11 @@ UTEST(subprocess, read_stdout_async) {
   ASSERT_EQ(0, subprocess_create(commandLine, subprocess_option_enable_async,
                                  &process));
 
-  do {
+  while(subprocess_alive(&process)) {
     bytes_read = subprocess_read_stdout(&process, data + index,
                                         sizeof(data) - 1 - index);
     index += bytes_read;
-  } while (bytes_read != 0);
+  }
 
   ASSERT_EQ(212992u, index);
 
@@ -654,7 +654,7 @@ UTEST(subprocess, poll_stdout_async) {
   ASSERT_EQ(0, subprocess_create(commandLine, subprocess_option_enable_async,
                                  &process));
 
-  do {
+  while(subprocess_alive(&process)) {
     bytes_read = subprocess_read_stdout(&process, data + index,
                                         sizeof(data) - 1 - index);
 
@@ -667,7 +667,7 @@ UTEST(subprocess, poll_stdout_async) {
     }
 
     index += bytes_read;
-  } while (bytes_read != 0);
+  }
 
   ASSERT_EQ(212992u, index);
 
