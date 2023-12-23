@@ -187,7 +187,7 @@ subprocess_weak int subprocess_terminate(struct subprocess_s *const process);
 ///
 /// The only safe way to read from the standard output of a process during it's
 /// execution is to use the `subprocess_option_enable_async` option in
-/// conjuction with this method.
+/// conjunction with this method.
 subprocess_weak unsigned
 subprocess_read_stdout(struct subprocess_s *const process, char *const buffer,
                        unsigned size);
@@ -201,7 +201,7 @@ subprocess_read_stdout(struct subprocess_s *const process, char *const buffer,
 ///
 /// The only safe way to read from the standard error of a process during it's
 /// execution is to use the `subprocess_option_enable_async` option in
-/// conjuction with this method.
+/// conjunction with this method.
 subprocess_weak unsigned
 subprocess_read_stderr(struct subprocess_s *const process, char *const buffer,
                        unsigned size);
