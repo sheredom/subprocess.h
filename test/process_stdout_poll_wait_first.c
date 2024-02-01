@@ -24,14 +24,21 @@
 // For more information, please refer to <http://unlicense.org/>
 
 #include <stdio.h>
-#include <string.h>
+#include <stdlib.h>
 
 int main(int argc, const char *const argv[]) {
-  // Do nothing, wait for an event on stdin
-  while(fgetc(stdin) == EOF){}
+  int index;
+  const int max = atoi(argv[1]);
 
-  // Event received, write something on stdout
-  printf("Hello, world!");
+  // We first wait for a signal on stdin to begin processing.
+  while (fgetc(stdin) != 's') {
+  }
+
+  do {
+    for (index = 0; index < max; index++) {
+      printf("Hello, world!");
+    }
+  } while (fgetc(stdin) != 's');
 
   return 0;
 }

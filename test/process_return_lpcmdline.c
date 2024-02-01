@@ -39,7 +39,7 @@ int main(int argc, const char *const argv[]) {
       printf("\"%s\"", argv[i]);
     else
       printf("%s", argv[i]);
-    if (i != (argc-1))
+    if (i != (argc - 1))
       printf(" ");
   }
 #endif
