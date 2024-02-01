@@ -48,17 +48,23 @@
 #pragma warning(pop)
 #endif
 
+#if defined(__TINYC__)
+#define SUBPROCESS_ATTRIBUTE(a) __attribute((a))
+#else
+#define SUBPROCESS_ATTRIBUTE(a) __attribute__((a))
+#endif
+
 #if defined(_MSC_VER)
 #define subprocess_pure
 #define subprocess_weak __inline
 #define subprocess_tls __declspec(thread)
 #elif defined(__MINGW32__)
-#define subprocess_pure __attribute__((pure))
-#define subprocess_weak static __attribute__((used))
+#define subprocess_pure SUBPROCESS_ATTRIBUTE(pure)
+#define subprocess_weak static SUBPROCESS_ATTRIBUTE(used)
 #define subprocess_tls __thread
-#elif defined(__clang__) || defined(__GNUC__)
-#define subprocess_pure __attribute__((pure))
-#define subprocess_weak __attribute__((weak))
+#elif defined(__clang__) || defined(__GNUC__) || defined(__TINYC__)
+#define subprocess_pure SUBPROCESS_ATTRIBUTE(pure)
+#define subprocess_weak SUBPROCESS_ATTRIBUTE(weak)
 #define subprocess_tls __thread
 #else
 #error Non clang, non gcc, non MSVC compiler found!
@@ -412,6 +418,13 @@ struct subprocess_s {
 };
 #ifdef __clang__
 #pragma clang diagnostic pop
+#endif
+
+#if defined(__clang__)
+#if __has_warning("-Wunsafe-buffer-usage")
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage"
+#endif
 #endif
 
 #if defined(_WIN32)
@@ -1172,6 +1185,12 @@ int subprocess_alive(struct subprocess_s *const process) {
 
   return is_alive;
 }
+
+#if defined(__clang__)
+#if __has_warning("-Wunsafe-buffer-usage")
+#pragma clang diagnostic pop
+#endif
+#endif
 
 #if defined(__cplusplus)
 } // extern "C"
