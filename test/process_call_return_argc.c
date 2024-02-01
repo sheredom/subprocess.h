@@ -24,7 +24,11 @@
 // For more information, please refer to <http://unlicense.org/>
 
 #include <subprocess.h>
-#ifdef __MINGW32__
+
+#if defined(_MSC_VER)
+#include <direct.h>
+#define chdir(x) _chdir(x)
+#elif defined(__MINGW32__)
 #include <unistd.h>  // chdir
 #endif
 

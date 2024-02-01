@@ -35,6 +35,13 @@ __declspec(dllimport) int __stdcall SetEnvironmentVariableA(const char *,
 
 #include "subprocess.h"
 
+#if defined(__clang__)
+#if __has_warning("-Wunsafe-buffer-usage")
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage"
+#endif
+#endif
+
 UTEST(create, subprocess_destroy_is_idempotent) {
   const char *const commandLine[] = {"./process_return_zero", 0};
   struct subprocess_s process;
