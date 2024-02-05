@@ -89,7 +89,11 @@ enum subprocess_option_e {
   // Search for program names in the PATH variable. Always enabled on Windows.
   // Note: this will **not** search for paths in any provided custom environment
   // and instead uses the PATH of the spawning process.
-  subprocess_option_search_user_path = 0x10
+  subprocess_option_search_user_path = 0x10,
+
+  // Make subprocess_read_stdout and subprocess_read_stderr return immediately
+  // with 0 if no data is available. Requires subprocess_option_enable_async.
+  subprocess_option_enable_async_no_wait = 0x20
 };
 
 #if defined(__cplusplus)
@@ -189,7 +193,8 @@ subprocess_weak int subprocess_terminate(struct subprocess_s *const process);
 /// @param buffer The buffer to read into.
 /// @param size The maximum number of bytes to read.
 /// @return The number of bytes actually read into buffer. Can only be 0 if the
-/// process has complete.
+/// process has complete, or if the process was created with
+/// `subprocess_option_enable_async_no_wait` and no data is currently available.
 ///
 /// The only safe way to read from the standard output of a process during it's
 /// execution is to use the `subprocess_option_enable_async` option in
@@ -203,7 +208,8 @@ subprocess_read_stdout(struct subprocess_s *const process, char *const buffer,
 /// @param buffer The buffer to read into.
 /// @param size The maximum number of bytes to read.
 /// @return The number of bytes actually read into buffer. Can only be 0 if the
-/// process has complete.
+/// process has complete, or if the process was created with
+/// `subprocess_option_enable_async_no_wait` and no data is currently available.
 ///
 /// The only safe way to read from the standard error of a process during it's
 /// execution is to use the `subprocess_option_enable_async` option in
@@ -230,6 +236,7 @@ subprocess_weak int subprocess_alive(struct subprocess_s *const process);
 #endif
 
 #if !defined(_WIN32)
+#include <fcntl.h>
 #include <signal.h>
 #include <spawn.h>
 #include <stdlib.h>
@@ -365,6 +372,10 @@ __declspec(dllimport) unsigned long __stdcall WaitForMultipleObjects(
     unsigned long, void *const *, int, unsigned long);
 __declspec(dllimport) int __stdcall GetOverlappedResult(void *, LPOVERLAPPED,
                                                         unsigned long *, int);
+__declspec(dllimport) int __stdcall PeekNamedPipe(void *, void *, unsigned long,
+                                                  unsigned long *,
+                                                  unsigned long *,
+                                                  unsigned long *);
 
 #if defined(_DLL)
 #define SUBPROCESS_DLLIMPORT __declspec(dllimport)
@@ -414,7 +425,8 @@ struct subprocess_s {
   int return_status;
 #endif
 
-  subprocess_size_t alive;
+  int alive;
+  int no_wait;
 };
 #ifdef __clang__
 #pragma clang diagnostic pop
@@ -490,6 +502,7 @@ int subprocess_create_ex(const char *const commandLine[], int options,
                          struct subprocess_s *const out_process) {
 #if defined(_WIN32)
   int fd;
+  int async_no_wait;
   void *rd, *wr;
   char *commandLineCombined;
   subprocess_size_t len;
@@ -521,6 +534,14 @@ int subprocess_create_ex(const char *const commandLine[], int options,
                                                 SUBPROCESS_NULL,
                                                 SUBPROCESS_NULL,
                                                 SUBPROCESS_NULL};
+
+  async_no_wait = subprocess_option_enable_async_no_wait ==
+                  (options & subprocess_option_enable_async_no_wait);
+
+  if (async_no_wait && (subprocess_option_enable_async !=
+                        (options & subprocess_option_enable_async))) {
+    return -1;
+  }
 
   startInfo.cb = sizeof(startInfo);
   startInfo.dwFlags = startFUseStdHandles;
@@ -766,17 +787,28 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   }
 
   out_process->alive = 1;
+  out_process->no_wait = async_no_wait;
 
   return 0;
 #else
   int stdinfd[2];
   int stdoutfd[2];
   int stderrfd[2];
+  int fd, fd_flags;
+  int async_no_wait;
   pid_t child;
   extern char **environ;
   char *const empty_environment[1] = {SUBPROCESS_NULL};
   posix_spawn_file_actions_t actions;
   char *const *used_environment;
+
+  async_no_wait = subprocess_option_enable_async_no_wait ==
+                  (options & subprocess_option_enable_async_no_wait);
+
+  if (async_no_wait && (subprocess_option_enable_async !=
+                        (options & subprocess_option_enable_async))) {
+    return -1;
+  }
 
   if (subprocess_option_inherit_environment ==
       (options & subprocess_option_inherit_environment)) {
@@ -903,6 +935,13 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   // Store the stdout read end
   out_process->stdout_file = fdopen(stdoutfd[0], "rb");
 
+  // Set non blocking if we are async and asked not to wait.
+  if (async_no_wait) {
+    fd = fileno(out_process->stdout_file);
+    fd_flags = fcntl(fd, F_GETFL, 0);
+    fcntl(fd, F_SETFL, fd_flags | O_NONBLOCK);
+  }
+
   if (subprocess_option_combined_stdout_stderr ==
       (options & subprocess_option_combined_stdout_stderr)) {
     out_process->stderr_file = out_process->stdout_file;
@@ -911,12 +950,20 @@ int subprocess_create_ex(const char *const commandLine[], int options,
     close(stderrfd[1]);
     // Store the stderr read end
     out_process->stderr_file = fdopen(stderrfd[0], "rb");
+
+    // Set non blocking if we are async and asked not to wait.
+    if (async_no_wait) {
+      fd = fileno(out_process->stderr_file);
+      fd_flags = fcntl(fd, F_GETFL, 0);
+      fcntl(fd, F_SETFL, fd_flags | O_NONBLOCK);
+    }
   }
 
   // Store the child's pid
   out_process->child = child;
 
   out_process->alive = 1;
+  out_process->no_wait = async_no_wait;
 
   posix_spawn_file_actions_destroy(&actions);
   return 0;
@@ -1060,12 +1107,24 @@ unsigned subprocess_read_stdout(struct subprocess_s *const process,
                                 char *const buffer, unsigned size) {
 #if defined(_WIN32)
   void *handle;
+  unsigned long bytes_available = 0;
   unsigned long bytes_read = 0;
   struct subprocess_overlapped_s overlapped = {0, 0, {{0, 0}}, SUBPROCESS_NULL};
   overlapped.hEvent = process->hEventOutput;
 
   handle = SUBPROCESS_PTR_CAST(void *,
                                _get_osfhandle(_fileno(process->stdout_file)));
+
+  if (process->no_wait) {
+    if (!PeekNamedPipe(handle, SUBPROCESS_NULL, 0, SUBPROCESS_NULL,
+                       &bytes_available, SUBPROCESS_NULL)) {
+      return 0;
+    }
+
+    if (0 == bytes_available) {
+      return 0;
+    }
+  }
 
   if (!ReadFile(handle, buffer, size, &bytes_read,
                 SUBPROCESS_PTR_CAST(LPOVERLAPPED, &overlapped))) {
@@ -1074,14 +1133,20 @@ unsigned subprocess_read_stdout(struct subprocess_s *const process,
 
     // Means we've got an async read!
     if (error == errorIoPending) {
+      const uintptr_t statusPending = 0x00000103;
+
+      const int wait = statusPending == overlapped.Internal;
+
       if (!GetOverlappedResult(handle,
                                SUBPROCESS_PTR_CAST(LPOVERLAPPED, &overlapped),
-                               &bytes_read, 1)) {
-        const unsigned long errorIoIncomplete = 996;
+                               &bytes_read, wait)) {
         const unsigned long errorHandleEOF = 38;
+        const unsigned long errorBrokenPipe = 109;
+        const unsigned long errorIoIncomplete = 996;
         error = GetLastError();
 
-        if ((error != errorIoIncomplete) && (error != errorHandleEOF)) {
+        if ((errorHandleEOF != error) && (errorBrokenPipe != error) &&
+            (errorIoIncomplete != error)) {
           return 0;
         }
       }
@@ -1105,12 +1170,24 @@ unsigned subprocess_read_stderr(struct subprocess_s *const process,
                                 char *const buffer, unsigned size) {
 #if defined(_WIN32)
   void *handle;
+  unsigned long bytes_available = 0;
   unsigned long bytes_read = 0;
   struct subprocess_overlapped_s overlapped = {0, 0, {{0, 0}}, SUBPROCESS_NULL};
   overlapped.hEvent = process->hEventError;
 
   handle = SUBPROCESS_PTR_CAST(void *,
                                _get_osfhandle(_fileno(process->stderr_file)));
+
+  if (process->no_wait) {
+    if (!PeekNamedPipe(handle, SUBPROCESS_NULL, 0, SUBPROCESS_NULL,
+                       &bytes_available, SUBPROCESS_NULL)) {
+      return 0;
+    }
+
+    if (0 == bytes_available) {
+      return 0;
+    }
+  }
 
   if (!ReadFile(handle, buffer, size, &bytes_read,
                 SUBPROCESS_PTR_CAST(LPOVERLAPPED, &overlapped))) {

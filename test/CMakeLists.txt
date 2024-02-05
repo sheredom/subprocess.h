@@ -23,8 +23,10 @@
 #
 # For more information, please refer to <http://unlicense.org/>
 
-project(process)
+project(subprocess)
 cmake_minimum_required(VERSION 3.15)
+
+set(SUBPROCESS_USE_SANITIZER "" CACHE STRING "Set which Clang Sanitizer to use")
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../)
 
@@ -47,7 +49,9 @@ add_executable(process_fail_stackoverflow process_fail_stackoverflow.c)
 add_executable(process_hung process_hung.c)
 add_executable(process_stdout_data process_stdout_data.c)
 add_executable(process_stdout_poll process_stdout_poll.c)
+add_executable(process_stdout_poll_wait_first process_stdout_poll_wait_first.c)
 add_executable(process_stderr_poll process_stderr_poll.c)
+add_executable(process_stderr_poll_wait_first process_stderr_poll_wait_first.c)
 add_executable(process_stdout_large process_stdout_large.c)
 add_executable(process_call_return_argc process_call_return_argc.c)
 
@@ -60,6 +64,11 @@ add_executable(subprocess_test
   pre_windows.cpp
   post_windows.cpp
 )
+
+if(NOT "${SUBPROCESS_USE_SANITIZER}" STREQUAL "")
+  target_compile_options(subprocess_test PUBLIC -fno-omit-frame-pointer -fsanitize=${SUBPROCESS_USE_SANITIZER})
+  target_link_options(subprocess_test PUBLIC -fno-omit-frame-pointer -fsanitize=${SUBPROCESS_USE_SANITIZER})
+endif()
 
 set(MSVC_FLAGS "/Wall /WX /wd4514 /wd4710 /wd4711 /wd5045")
 
@@ -116,6 +125,11 @@ add_executable(subprocess_mt_test
   pre_windows.cpp
   post_windows.cpp
 )
+
+if(NOT "${SUBPROCESS_USE_SANITIZER}" STREQUAL "")
+  target_compile_options(subprocess_mt_test PUBLIC -fno-omit-frame-pointer -fsanitize=${SUBPROCESS_USE_SANITIZER})
+  target_link_options(subprocess_mt_test PUBLIC -fno-omit-frame-pointer -fsanitize=${SUBPROCESS_USE_SANITIZER})
+endif()
 
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
   if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
