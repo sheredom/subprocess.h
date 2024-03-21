@@ -117,9 +117,9 @@ subprocess_weak int subprocess_create(const char *const command_line[],
 /// @param environment An optional array of strings for the environment to use
 /// for a child process (each element of the form FOO=BAR). The last element
 /// must be NULL to signify the end of the array.
+/// @param process_cwd The current working directory of the newly created 
+/// process. If NULL, will be the same as the parent process.
 /// @param out_process The newly created process.
-/// @param process_cwd The CWD of the newly created process. If null, will be 
-/// the same as the parent process.
 /// @return On success zero is returned.
 ///
 /// If `options` contains `subprocess_option_inherit_environment`, then
@@ -127,8 +127,8 @@ subprocess_weak int subprocess_create(const char *const command_line[],
 subprocess_weak int
 subprocess_create_ex(const char *const command_line[], int options,
                      const char *const environment[],
-                     struct subprocess_s *const out_process,
-                     const char *const process_cwd);
+                     const char *const process_cwd,
+                     struct subprocess_s *const out_process);
 
 /// @brief Get the standard input file for a process.
 /// @param process The process to query.
@@ -485,13 +485,13 @@ int subprocess_create_named_pipe_helper(void **rd, void **wr) {
 int subprocess_create(const char *const commandLine[], int options,
                       struct subprocess_s *const out_process) {
   return subprocess_create_ex(commandLine, options, SUBPROCESS_NULL,
-                              out_process, SUBPROCESS_NULL);
+                              SUBPROCESS_NULL, out_process);
 }
 
 int subprocess_create_ex(const char *const commandLine[], int options,
                          const char *const environment[],
-                         struct subprocess_s *const out_process,
-                         const char *const process_cwd) {
+                         const char *const process_cwd,
+                         struct subprocess_s *const out_process) {
 #if defined(_WIN32)
   int fd;
   void *rd, *wr;
@@ -824,9 +824,11 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   }
 
   // Set working directory
-  if (0 != posix_spawn_file_actions_addchdir_np(&actions, process_cwd)) {
-    posix_spawn_file_actions_destroy(&actions);
-    return -1;
+  if (process_cwd) {
+    if (0 != posix_spawn_file_actions_addchdir_np(&actions, process_cwd)) {
+      posix_spawn_file_actions_destroy(&actions);
+      return -1;
+    }
   }
 
   // Close the stdin write end
