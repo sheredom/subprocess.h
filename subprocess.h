@@ -804,7 +804,7 @@ int subprocess_create_ex(const char *const commandLine[], int options,
 #pragma clang diagnostic ignored "-Wcast-qual"
 #pragma clang diagnostic ignored "-Wold-style-cast"
 #endif
-    used_environment = (char *const *)environment;
+    used_environment = SUBPROCESS_CONST_CAST(char *const *, environment);
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
@@ -874,13 +874,15 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   if (subprocess_option_search_user_path ==
       (options & subprocess_option_search_user_path)) {
     if (0 != posix_spawnp(&child, commandLine[0], &actions, SUBPROCESS_NULL,
-                          (char *const *)commandLine, used_environment)) {
+                          SUBPROCESS_CONST_CAST(char *const *, commandLine),
+                          used_environment)) {
       posix_spawn_file_actions_destroy(&actions);
       return -1;
     }
   } else {
     if (0 != posix_spawn(&child, commandLine[0], &actions, SUBPROCESS_NULL,
-                         (char *const *)commandLine, used_environment)) {
+                         SUBPROCESS_CONST_CAST(char *const *, commandLine),
+                         used_environment)) {
       posix_spawn_file_actions_destroy(&actions);
       return -1;
     }
