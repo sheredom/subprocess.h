@@ -192,6 +192,30 @@ UTEST(create, subprocess_stdout_argc) {
   ASSERT_EQ(0, subprocess_destroy(&process));
 }
 
+UTEST(create, subprocess_stdout_argc_with_empty_strings) {
+  const char *const commandLine[] = {
+      "./process_stdout_argc", "", "", "", "", 0};
+  struct subprocess_s process;
+  int ret = -1;
+  FILE *stdout_file;
+  char temp[32];
+
+  ASSERT_EQ(0, subprocess_create(commandLine, 0, &process));
+
+  ASSERT_EQ(0, subprocess_join(&process, &ret));
+
+  ASSERT_EQ(0, ret);
+
+  stdout_file = subprocess_stdout(&process);
+  ASSERT_TRUE(stdout_file);
+
+  ASSERT_TRUE(fgets(temp, 32, stdout_file));
+
+  ASSERT_EQ(5, atoi(temp));
+
+  ASSERT_EQ(0, subprocess_destroy(&process));
+}
+
 UTEST(create, subprocess_stdout_argv) {
   const char *const commandLine[] = {
       "./process_stdout_argv", "foo", "bar", "baz", "faz", 0};
