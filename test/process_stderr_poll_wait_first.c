@@ -24,24 +24,21 @@
 // For more information, please refer to <http://unlicense.org/>
 
 #include <stdio.h>
-#include <string.h>
-
-#ifdef _MSC_VER
-#include <windows.h>
-#endif
+#include <stdlib.h>
 
 int main(int argc, const char *const argv[]) {
-#ifdef _MSC_VER
-  printf("%s", GetCommandLineA());
-#else
-  for (int i = 0; i < argc; i++) {
-    if (strpbrk(argv[i], "\t\n\v ") != NULL)
-      printf("\"%s\"", argv[i]);
-    else
-      printf("%s", argv[i]);
-    if (i != (argc - 1))
-      printf(" ");
+  int index;
+  const int max = atoi(argv[1]);
+
+  // We first wait for a signal on stdin to begin processing.
+  while (fgetc(stdin) != 's') {
   }
-#endif
+
+  do {
+    for (index = 0; index < max; index++) {
+      fprintf(stderr, "Hello, world!");
+    }
+  } while (fgetc(stdin) != 's');
+
   return 0;
 }

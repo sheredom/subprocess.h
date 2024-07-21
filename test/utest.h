@@ -93,11 +93,11 @@ typedef uint64_t utest_uint64_t;
 typedef uint32_t utest_uint32_t;
 #endif
 
+#include <errno.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <errno.h>
 
 #if defined(__cplusplus)
 #if defined(_MSC_VER) && !defined(_CPPUNWIND)

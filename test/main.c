@@ -315,8 +315,8 @@ UTEST(create, subprocess_return_special_argv) {
 }
 
 UTEST(create, subprocess_return_lpcmdline) {
-  const char *const commandLine[] = {"./process_return_lpcmdline",
-                                     "noquotes", "should be quoted", 0};
+  const char *const commandLine[] = {"./process_return_lpcmdline", "noquotes",
+                                     "should be quoted", 0};
   struct subprocess_s process;
   int ret = -1;
   size_t cmp_index, index;
@@ -337,7 +337,8 @@ UTEST(create, subprocess_return_lpcmdline) {
 
   // comparing from the back skips exe name
   cmp_index = strlen(compare) - 1;
-  for (index = strlen(temp) - 1; index != 0 && cmp_index != 0; index--,cmp_index--) {
+  for (index = strlen(temp) - 1; index != 0 && cmp_index != 0;
+       index--, cmp_index--) {
     if (temp[index] != compare[cmp_index])
       ASSERT_TRUE(0);
   }
@@ -625,11 +626,11 @@ UTEST(subprocess, read_stdout_async_small) {
   ASSERT_EQ(0, subprocess_create(commandLine, subprocess_option_enable_async,
                                  &process));
 
-  do {
+  while (subprocess_alive(&process)) {
     bytes_read = subprocess_read_stdout(&process, data + index,
                                         sizeof(data) - 1 - index);
     index += bytes_read;
-  } while (bytes_read != 0);
+  }
 
   ASSERT_EQ(13u, index);
 
@@ -655,11 +656,11 @@ UTEST(subprocess, read_stdout_async) {
   ASSERT_EQ(0, subprocess_create(commandLine, subprocess_option_enable_async,
                                  &process));
 
-  do {
+  while (subprocess_alive(&process)) {
     bytes_read = subprocess_read_stdout(&process, data + index,
                                         sizeof(data) - 1 - index);
     index += bytes_read;
-  } while (bytes_read != 0);
+  }
 
   ASSERT_EQ(212992u, index);
 
@@ -685,7 +686,57 @@ UTEST(subprocess, poll_stdout_async) {
   ASSERT_EQ(0, subprocess_create(commandLine, subprocess_option_enable_async,
                                  &process));
 
-  do {
+  while (subprocess_alive(&process)) {
+    bytes_read = subprocess_read_stdout(&process, data + index,
+                                        sizeof(data) - 1 - index);
+
+    // Send the control character to the subprocess to tell it to stop after
+    // we've read at least one thing from it's stdout (meaning the read was
+    // definitely async).
+    if (0 != index) {
+      fputc('s', subprocess_stdin(&process));
+      fflush(subprocess_stdin(&process));
+    }
+
+    index += bytes_read;
+  }
+
+  ASSERT_EQ(212992u, index);
+
+  for (index = 0; index < 16384; index++) {
+    const char *const helloWorld = "Hello, world!";
+    ASSERT_TRUE(0 == memcmp(data + (index * strlen(helloWorld)), helloWorld,
+                            strlen(helloWorld)));
+  }
+
+  ASSERT_EQ(0, subprocess_join(&process, &ret));
+  ASSERT_EQ(0, subprocess_destroy(&process));
+  ASSERT_EQ(ret, 0);
+}
+
+UTEST(subprocess, poll_stdout_async_wait_first) {
+  const char *const commandLine[] = {"./process_stdout_poll_wait_first",
+                                     "16384", 0};
+  struct subprocess_s process;
+  int ret = -1;
+  static char data[1048576 + 1] = {0};
+  unsigned index = 0;
+  unsigned bytes_read = 0;
+
+  ASSERT_EQ(0, subprocess_create(commandLine, subprocess_option_enable_async,
+                                 &process));
+
+  bytes_read =
+      subprocess_read_stdout(&process, data + index, sizeof(data) - 1 - index);
+
+  // We first have zero bytes read because we haven't wrote the control
+  // character to stdin.
+  ASSERT_EQ(0u, bytes_read);
+
+  fputc('s', subprocess_stdin(&process));
+  fflush(subprocess_stdin(&process));
+
+  while (subprocess_alive(&process)) {
     bytes_read = subprocess_read_stdout(&process, data + index,
                                         sizeof(data) - 1 - index);
 
@@ -698,7 +749,7 @@ UTEST(subprocess, poll_stdout_async) {
     }
 
     index += bytes_read;
-  } while (bytes_read != 0);
+  }
 
   ASSERT_EQ(212992u, index);
 
@@ -724,7 +775,7 @@ UTEST(subprocess, poll_stderr_async) {
   ASSERT_EQ(0, subprocess_create(commandLine, subprocess_option_enable_async,
                                  &process));
 
-  do {
+  while (subprocess_alive(&process)) {
     bytes_read = subprocess_read_stderr(&process, data + index,
                                         sizeof(data) - 1 - index);
 
@@ -737,7 +788,57 @@ UTEST(subprocess, poll_stderr_async) {
     }
 
     index += bytes_read;
-  } while (bytes_read != 0);
+  }
+
+  ASSERT_EQ(212992u, index);
+
+  for (index = 0; index < 16384; index++) {
+    const char *const helloWorld = "Hello, world!";
+    ASSERT_TRUE(0 == memcmp(data + (index * strlen(helloWorld)), helloWorld,
+                            strlen(helloWorld)));
+  }
+
+  ASSERT_EQ(0, subprocess_join(&process, &ret));
+  ASSERT_EQ(0, subprocess_destroy(&process));
+  ASSERT_EQ(ret, 0);
+}
+
+UTEST(subprocess, poll_stderr_async_wait_first) {
+  const char *const commandLine[] = {"./process_stderr_poll_wait_first",
+                                     "16384", 0};
+  struct subprocess_s process;
+  int ret = -1;
+  static char data[1048576 + 1] = {0};
+  unsigned index = 0;
+  unsigned bytes_read = 0;
+
+  ASSERT_EQ(0, subprocess_create(commandLine, subprocess_option_enable_async,
+                                 &process));
+
+  bytes_read =
+      subprocess_read_stderr(&process, data + index, sizeof(data) - 1 - index);
+
+  // We first have zero bytes read because we haven't wrote the control
+  // character to stdin.
+  ASSERT_EQ(0u, bytes_read);
+
+  fputc('s', subprocess_stdin(&process));
+  fflush(subprocess_stdin(&process));
+
+  while (subprocess_alive(&process)) {
+    bytes_read = subprocess_read_stderr(&process, data + index,
+                                        sizeof(data) - 1 - index);
+
+    // Send the control character to the subprocess to tell it to stop after
+    // we've read at least one thing from it's stderr (meaning the read was
+    // definitely async).
+    if (index == 0) {
+      fputc('s', subprocess_stdin(&process));
+      fflush(subprocess_stdin(&process));
+    }
+
+    index += bytes_read;
+  }
 
   ASSERT_EQ(212992u, index);
 

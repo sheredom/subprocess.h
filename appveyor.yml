@@ -42,7 +42,7 @@ build_script:
   - if NOT "%VSVERSION%"=="Visual Studio 16 2019" if "%PLATFORM%"=="x64" cmake -G "%VSVERSION% Win64" ../test
   - if NOT "%VSVERSION%"=="Visual Studio 16 2019" if "%PLATFORM%"=="Win32" cmake -G "%VSVERSION%" ../test
   - if "%VSVERSION%"=="Visual Studio 16 2019" cmake -G "%VSVERSION%" -A "%PLATFORM%" ../test
-  - msbuild /m /p:Configuration="%CONFIGURATION%" /p:Platform="%PLATFORM%" process.sln
+  - msbuild /m /p:Configuration="%CONFIGURATION%" /p:Platform="%PLATFORM%" subprocess.sln
   - cd %CONFIGURATION%
   - subprocess_test.exe
   - subprocess_mt_test.exe
