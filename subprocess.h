@@ -790,12 +790,18 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   }
 
   if (0 != pipe(stdoutfd)) {
+    close(stdinfd[0]);
+    close(stdinfd[1]);
     return -1;
   }
 
   if (subprocess_option_combined_stdout_stderr !=
       (options & subprocess_option_combined_stdout_stderr)) {
     if (0 != pipe(stderrfd)) {
+      close(stdinfd[0]);
+      close(stdinfd[1]);
+      close(stdoutfd[0]);
+      close(stdoutfd[1]);
       return -1;
     }
   }
@@ -843,6 +849,15 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   // Map the write end to stdout
   if (0 !=
       posix_spawn_file_actions_adddup2(&actions, stdoutfd[1], STDOUT_FILENO)) {
+    close(stdinfd[0]);
+    close(stdinfd[1]);
+    close(stdoutfd[0]);
+    close(stdoutfd[1]);
+    if (subprocess_option_combined_stdout_stderr !=
+        (options & subprocess_option_combined_stdout_stderr)) {
+      close(stderrfd[0]);
+      close(stderrfd[1]);
+    }
     posix_spawn_file_actions_destroy(&actions);
     return -1;
   }
@@ -851,18 +866,34 @@ int subprocess_create_ex(const char *const commandLine[], int options,
       (options & subprocess_option_combined_stdout_stderr)) {
     if (0 != posix_spawn_file_actions_adddup2(&actions, STDOUT_FILENO,
                                               STDERR_FILENO)) {
+      close(stdinfd[0]);
+      close(stdinfd[1]);
+      close(stdoutfd[0]);
+      close(stdoutfd[1]);
       posix_spawn_file_actions_destroy(&actions);
       return -1;
     }
   } else {
     // Close the stderr read end
     if (0 != posix_spawn_file_actions_addclose(&actions, stderrfd[0])) {
+      close(stdinfd[0]);
+      close(stdinfd[1]);
+      close(stdoutfd[0]);
+      close(stdoutfd[1]);
+      close(stderrfd[0]);
+      close(stderrfd[1]);
       posix_spawn_file_actions_destroy(&actions);
       return -1;
     }
     // Map the write end to stdout
     if (0 != posix_spawn_file_actions_adddup2(&actions, stderrfd[1],
                                               STDERR_FILENO)) {
+      close(stdinfd[0]);
+      close(stdinfd[1]);
+      close(stdoutfd[0]);
+      close(stdoutfd[1]);
+      close(stderrfd[0]);
+      close(stderrfd[1]);
       posix_spawn_file_actions_destroy(&actions);
       return -1;
     }
@@ -878,6 +909,15 @@ int subprocess_create_ex(const char *const commandLine[], int options,
     if (0 != posix_spawnp(&child, commandLine[0], &actions, SUBPROCESS_NULL,
                           SUBPROCESS_CONST_CAST(char *const *, commandLine),
                           used_environment)) {
+      close(stdinfd[0]);
+      close(stdinfd[1]);
+      close(stdoutfd[0]);
+      close(stdoutfd[1]);
+      if (subprocess_option_combined_stdout_stderr !=
+          (options & subprocess_option_combined_stdout_stderr)) {
+        close(stderrfd[0]);
+        close(stderrfd[1]);
+      }
       posix_spawn_file_actions_destroy(&actions);
       return -1;
     }
@@ -885,6 +925,15 @@ int subprocess_create_ex(const char *const commandLine[], int options,
     if (0 != posix_spawn(&child, commandLine[0], &actions, SUBPROCESS_NULL,
                          SUBPROCESS_CONST_CAST(char *const *, commandLine),
                          used_environment)) {
+      close(stdinfd[0]);
+      close(stdinfd[1]);
+      close(stdoutfd[0]);
+      close(stdoutfd[1]);
+      if (subprocess_option_combined_stdout_stderr !=
+          (options & subprocess_option_combined_stdout_stderr)) {
+        close(stderrfd[0]);
+        close(stderrfd[1]);
+      }
       posix_spawn_file_actions_destroy(&actions);
       return -1;
     }
