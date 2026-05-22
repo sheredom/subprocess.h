@@ -218,6 +218,12 @@ The current list of todos:
 * Add the ability to specify if a child process should die if the parent process
   is terminated.
 
+## AI Usage
+
+AI tool use is explicitly permitted in commits to this repository. There is a
+tagged release [pre-ai](https://github.com/sheredom/subprocess.h/releases/tag/pre-ai)
+that denotes the last release where AI tooling was not used.
+
 ## License
 
 This is free and unencumbered software released into the public domain.
