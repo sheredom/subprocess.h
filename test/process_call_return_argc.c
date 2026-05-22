@@ -29,7 +29,7 @@
 #include <direct.h>
 #define chdir(x) _chdir(x)
 #elif defined(__MINGW32__)
-#include <unistd.h>  // chdir
+#include <unistd.h> // chdir
 #endif
 
 int main(int argc, const char *const argv[]) {
