@@ -25,12 +25,28 @@
 
 #include "utest.h"
 
+#include <errno.h>
+
 #if defined(_MSC_VER)
 __declspec(dllimport) void __stdcall Sleep(unsigned long);
 __declspec(dllimport) int __stdcall SetEnvironmentVariableA(const char *,
                                                             const char *);
+#endif
+
+#if defined(_WIN32)
+#include <direct.h>
+#define subprocess_test_getcwd _getcwd
+#define subprocess_test_mkdir(path) _mkdir(path)
+#define SUBPROCESS_TEST_PATH_SEPARATOR "\\"
+#define SUBPROCESS_TEST_EXE_SUFFIX ".exe"
 #else
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
+#define subprocess_test_getcwd getcwd
+#define subprocess_test_mkdir(path) mkdir(path, 0777)
+#define SUBPROCESS_TEST_PATH_SEPARATOR "/"
+#define SUBPROCESS_TEST_EXE_SUFFIX ""
 #endif
 
 #include "subprocess.h"
@@ -815,11 +831,53 @@ UTEST(environment, specify_environment) {
   struct subprocess_s process;
   int ret = -1;
 
-  ASSERT_EQ(0, subprocess_create_ex(commandLine, 0, environment, SUBPROCESS_NULL, &process));
+  ASSERT_EQ(0, subprocess_create_ex(commandLine, 0, environment,
+                                    SUBPROCESS_NULL, &process));
 
   ASSERT_EQ(0, subprocess_join(&process, &ret));
 
   ASSERT_EQ(42, ret);
+
+  ASSERT_EQ(0, subprocess_destroy(&process));
+}
+
+UTEST(create_ex, subprocess_cwd) {
+  char current_path[4096];
+  char target_path[4096];
+  char process_path[4096];
+  const char *commandLine[3];
+  struct subprocess_s process;
+  int ret = -1;
+  int written;
+
+  ASSERT_NE(NULL, subprocess_test_getcwd(current_path, sizeof(current_path)));
+
+  written = snprintf(target_path, sizeof(target_path), "%s%s%s", current_path,
+                     SUBPROCESS_TEST_PATH_SEPARATOR, "subprocess_cwd_test_dir");
+  ASSERT_TRUE(0 < written);
+  ASSERT_TRUE(written < (int)sizeof(target_path));
+
+  errno = 0;
+  if (0 != subprocess_test_mkdir(target_path)) {
+    ASSERT_EQ(EEXIST, errno);
+  }
+
+  written = snprintf(process_path, sizeof(process_path), "%s%s%s%s", current_path,
+                     SUBPROCESS_TEST_PATH_SEPARATOR, "process_cwd",
+                     SUBPROCESS_TEST_EXE_SUFFIX);
+  ASSERT_TRUE(0 < written);
+  ASSERT_TRUE(written < (int)sizeof(process_path));
+
+  commandLine[0] = process_path;
+  commandLine[1] = target_path;
+  commandLine[2] = 0;
+
+  ASSERT_EQ(0, subprocess_create_ex(commandLine, 0, SUBPROCESS_NULL,
+                                    target_path, &process));
+
+  ASSERT_EQ(0, subprocess_join(&process, &ret));
+
+  ASSERT_EQ(0, ret);
 
   ASSERT_EQ(0, subprocess_destroy(&process));
 }

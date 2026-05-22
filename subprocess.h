@@ -117,7 +117,7 @@ subprocess_weak int subprocess_create(const char *const command_line[],
 /// @param environment An optional array of strings for the environment to use
 /// for a child process (each element of the form FOO=BAR). The last element
 /// must be NULL to signify the end of the array.
-/// @param process_cwd The current working directory of the newly created 
+/// @param process_cwd The current working directory of the newly created
 /// process. If NULL, will be the same as the parent process.
 /// @param out_process The newly created process.
 /// @return On success zero is returned.
