@@ -158,13 +158,15 @@ The `subprocess_create_ex` entry-point contains an additional argument
 const char *command_line[] = {"echo", "\"Hello, world!\"", NULL};
 const char *environment[] = {"FOO=BAR", "HAZ=BAZ", NULL};
 struct subprocess_s subprocess;
-int result = subprocess_create_ex(command_line, 0, environment, &subprocess);
+int result = subprocess_create_ex(command_line, 0, environment, NULL, &subprocess);
 if (0 != result) {
   // an error occurred!
 }
 ```
 
-This lets you specify custom environments for spawned subprocesses.
+This lets you specify custom environments for spawned subprocesses. The fourth
+argument lets you optionally specify the child process current working directory;
+pass `NULL` to inherit the parent's current working directory.
 
 Note though that you **cannot** specify `subprocess_option_inherit_environment`
 with a custom environment. If you want to merge some custom environment with the

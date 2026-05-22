@@ -54,6 +54,7 @@ add_executable(process_stderr_poll process_stderr_poll.c)
 add_executable(process_stderr_poll_wait_first process_stderr_poll_wait_first.c)
 add_executable(process_stdout_large process_stdout_large.c)
 add_executable(process_call_return_argc process_call_return_argc.c)
+add_executable(process_cwd process_cwd.c)
 
 add_executable(subprocess_test
   ../subprocess.h
