@@ -34,12 +34,16 @@ __declspec(dllimport) int __stdcall SetEnvironmentVariableA(const char *,
 #endif
 
 #if defined(_WIN32)
+__declspec(dllimport) void *__stdcall GetCurrentProcess(void);
+__declspec(dllimport) int __stdcall GetProcessHandleCount(void *,
+                                                           unsigned long *);
 #include <direct.h>
 #define subprocess_test_getcwd _getcwd
 #define subprocess_test_mkdir(path) _mkdir(path)
 #define SUBPROCESS_TEST_PATH_SEPARATOR "\\"
 #define SUBPROCESS_TEST_EXE_SUFFIX ".exe"
 #else
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -50,6 +54,32 @@ __declspec(dllimport) int __stdcall SetEnvironmentVariableA(const char *,
 #endif
 
 #include "subprocess.h"
+
+static int subprocess_test_open_resource_count(void) {
+#if defined(_WIN32)
+  unsigned long count = 0;
+  if (!GetProcessHandleCount(GetCurrentProcess(), &count)) {
+    return -1;
+  }
+  return (int)count;
+#else
+  long max_fd = sysconf(_SC_OPEN_MAX);
+  long fd;
+  int count = 0;
+
+  if ((max_fd < 0) || (4096 < max_fd)) {
+    max_fd = 4096;
+  }
+
+  for (fd = 0; fd < max_fd; fd++) {
+    if (fcntl((int)fd, F_GETFD) != -1) {
+      count++;
+    }
+  }
+
+  return count;
+#endif
+}
 
 #if defined(__clang__)
 #if __has_warning("-Wunsafe-buffer-usage")
@@ -70,6 +100,29 @@ UTEST(create, subprocess_destroy_is_idempotent) {
   ASSERT_EQ(0, subprocess_destroy(&process));
 
   ASSERT_EQ(0, subprocess_destroy(&process));
+}
+
+UTEST(create_ex, subprocess_create_failure_does_not_leak_resources) {
+  const char *const commandLine[] = {
+      "./subprocess_this_command_should_not_exist", 0};
+  struct subprocess_s process;
+  int before;
+  int after;
+  int i;
+
+  before = subprocess_test_open_resource_count();
+  ASSERT_TRUE(0 <= before);
+
+  for (i = 0; i < 10; i++) {
+    memset(&process, 0, sizeof(process));
+    ASSERT_EQ(-1, subprocess_create_ex(commandLine, 0, SUBPROCESS_NULL,
+                                       SUBPROCESS_NULL, &process));
+  }
+
+  after = subprocess_test_open_resource_count();
+  ASSERT_TRUE(0 <= after);
+
+  ASSERT_EQ(before, after);
 }
 
 UTEST(create, subprocess_return_zero) {
