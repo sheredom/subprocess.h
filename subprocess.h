@@ -394,6 +394,7 @@ __declspec(dllimport) int __stdcall PeekNamedPipe(void *, void *, unsigned long,
 SUBPROCESS_DLLIMPORT int __cdecl _fileno(FILE *);
 SUBPROCESS_DLLIMPORT int __cdecl _open_osfhandle(subprocess_intptr_t, int);
 SUBPROCESS_DLLIMPORT subprocess_intptr_t __cdecl _get_osfhandle(int);
+SUBPROCESS_DLLIMPORT int __cdecl _close(int);
 
 #ifndef __MINGW32__
 void *__cdecl _alloca(subprocess_size_t);
@@ -444,6 +445,18 @@ struct subprocess_s {
 
 #if defined(_WIN32)
 subprocess_weak int subprocess_create_named_pipe_helper(void **rd, void **wr);
+subprocess_weak void subprocess_close_handle(void **handle);
+void subprocess_close_handle(void **handle) {
+  const void *const invalidHandleValue =
+      SUBPROCESS_PTR_CAST(void *, ~(SUBPROCESS_CAST(subprocess_intptr_t, 0)));
+
+  if (*handle && (invalidHandleValue != *handle)) {
+    CloseHandle(*handle);
+  }
+
+  *handle = SUBPROCESS_NULL;
+}
+
 int subprocess_create_named_pipe_helper(void **rd, void **wr) {
   const unsigned long pipeAccessInbound = 0x00000001;
   const unsigned long fileFlagOverlapped = 0x40000000;
@@ -459,6 +472,9 @@ int subprocess_create_named_pipe_helper(void **rd, void **wr) {
   char name[256] = {0};
   static subprocess_tls long index = 0;
   const long unique = index++;
+
+  *rd = SUBPROCESS_NULL;
+  *wr = SUBPROCESS_NULL;
 
 #if defined(_MSC_VER) && _MSC_VER < 1900
 #pragma warning(push, 1)
@@ -487,6 +503,7 @@ int subprocess_create_named_pipe_helper(void **rd, void **wr) {
                     openExisting, fileAttributeNormal, SUBPROCESS_NULL);
 
   if (invalidHandleValue == *wr) {
+    subprocess_close_handle(rd);
     return -1;
   }
 
@@ -507,7 +524,8 @@ int subprocess_create_ex(const char *const commandLine[], int options,
 #if defined(_WIN32)
   int fd;
   int async_no_wait;
-  void *rd, *wr;
+  void *rd = SUBPROCESS_NULL;
+  void *wr = SUBPROCESS_NULL;
   char *commandLineCombined;
   subprocess_size_t len;
   int i, j;
@@ -516,7 +534,9 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   const unsigned long startFUseStdHandles = 0x00000100;
   const unsigned long handleFlagInherit = 0x00000001;
   const unsigned long createNoWindow = 0x08000000;
-  struct subprocess_subprocess_information_s processInfo;
+  struct subprocess_subprocess_information_s processInfo = {SUBPROCESS_NULL,
+                                                            SUBPROCESS_NULL, 0,
+                                                            0};
   struct subprocess_security_attributes_s saAttr = {sizeof(saAttr),
                                                     SUBPROCESS_NULL, 1};
   char *used_environment = SUBPROCESS_NULL;
@@ -553,6 +573,8 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   if (subprocess_option_no_window == (options & subprocess_option_no_window)) {
     flags |= createNoWindow;
   }
+
+  memset(out_process, 0, sizeof(*out_process));
 
   if (subprocess_option_inherit_environment !=
       (options & subprocess_option_inherit_environment)) {
@@ -596,51 +618,57 @@ int subprocess_create_ex(const char *const commandLine[], int options,
 
   if (!CreatePipe(&rd, &wr, SUBPROCESS_PTR_CAST(LPSECURITY_ATTRIBUTES, &saAttr),
                   0)) {
-    return -1;
+    goto cleanup;
   }
 
   if (!SetHandleInformation(wr, handleFlagInherit, 0)) {
-    return -1;
+    goto cleanup;
   }
 
   fd = _open_osfhandle(SUBPROCESS_PTR_CAST(subprocess_intptr_t, wr), 0);
+  if (-1 == fd) {
+    goto cleanup;
+  }
+  wr = SUBPROCESS_NULL;
 
-  if (-1 != fd) {
-    out_process->stdin_file = _fdopen(fd, "wb");
-
-    if (SUBPROCESS_NULL == out_process->stdin_file) {
-      return -1;
-    }
+  out_process->stdin_file = _fdopen(fd, "wb");
+  if (SUBPROCESS_NULL == out_process->stdin_file) {
+    _close(fd);
+    goto cleanup;
   }
 
   startInfo.hStdInput = rd;
+  rd = SUBPROCESS_NULL;
 
   if (options & subprocess_option_enable_async) {
     if (subprocess_create_named_pipe_helper(&rd, &wr)) {
-      return -1;
+      goto cleanup;
     }
   } else {
     if (!CreatePipe(&rd, &wr,
                     SUBPROCESS_PTR_CAST(LPSECURITY_ATTRIBUTES, &saAttr), 0)) {
-      return -1;
+      goto cleanup;
     }
   }
 
   if (!SetHandleInformation(rd, handleFlagInherit, 0)) {
-    return -1;
+    goto cleanup;
   }
 
   fd = _open_osfhandle(SUBPROCESS_PTR_CAST(subprocess_intptr_t, rd), 0);
+  if (-1 == fd) {
+    goto cleanup;
+  }
+  rd = SUBPROCESS_NULL;
 
-  if (-1 != fd) {
-    out_process->stdout_file = _fdopen(fd, "rb");
-
-    if (SUBPROCESS_NULL == out_process->stdout_file) {
-      return -1;
-    }
+  out_process->stdout_file = _fdopen(fd, "rb");
+  if (SUBPROCESS_NULL == out_process->stdout_file) {
+    _close(fd);
+    goto cleanup;
   }
 
   startInfo.hStdOutput = wr;
+  wr = SUBPROCESS_NULL;
 
   if (subprocess_option_combined_stdout_stderr ==
       (options & subprocess_option_combined_stdout_stderr)) {
@@ -649,30 +677,33 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   } else {
     if (options & subprocess_option_enable_async) {
       if (subprocess_create_named_pipe_helper(&rd, &wr)) {
-        return -1;
+        goto cleanup;
       }
     } else {
       if (!CreatePipe(&rd, &wr,
                       SUBPROCESS_PTR_CAST(LPSECURITY_ATTRIBUTES, &saAttr), 0)) {
-        return -1;
+        goto cleanup;
       }
     }
 
     if (!SetHandleInformation(rd, handleFlagInherit, 0)) {
-      return -1;
+      goto cleanup;
     }
 
     fd = _open_osfhandle(SUBPROCESS_PTR_CAST(subprocess_intptr_t, rd), 0);
+    if (-1 == fd) {
+      goto cleanup;
+    }
+    rd = SUBPROCESS_NULL;
 
-    if (-1 != fd) {
-      out_process->stderr_file = _fdopen(fd, "rb");
-
-      if (SUBPROCESS_NULL == out_process->stderr_file) {
-        return -1;
-      }
+    out_process->stderr_file = _fdopen(fd, "rb");
+    if (SUBPROCESS_NULL == out_process->stderr_file) {
+      _close(fd);
+      goto cleanup;
     }
 
     startInfo.hStdError = wr;
+    wr = SUBPROCESS_NULL;
   }
 
   if (options & subprocess_option_enable_async) {
@@ -682,6 +713,9 @@ int subprocess_create_ex(const char *const commandLine[], int options,
     out_process->hEventError =
         CreateEventA(SUBPROCESS_PTR_CAST(LPSECURITY_ATTRIBUTES, &saAttr), 1, 1,
                      SUBPROCESS_NULL);
+    if (!out_process->hEventOutput || !out_process->hEventError) {
+      goto cleanup;
+    }
   } else {
     out_process->hEventOutput = SUBPROCESS_NULL;
     out_process->hEventError = SUBPROCESS_NULL;
@@ -719,7 +753,7 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   commandLineCombined = SUBPROCESS_CAST(char *, _alloca(len));
 
   if (!commandLineCombined) {
-    return -1;
+    goto cleanup;
   }
 
   // Gonna re-use len to store the write index into commandLineCombined
@@ -772,15 +806,18 @@ int subprocess_create_ex(const char *const commandLine[], int options,
           SUBPROCESS_PTR_CAST(LPSTARTUPINFOA,
                               &startInfo), // STARTUPINFO pointer
           SUBPROCESS_PTR_CAST(LPPROCESS_INFORMATION, &processInfo))) {
-    return -1;
+    goto cleanup;
   }
 
   out_process->hProcess = processInfo.hProcess;
+  processInfo.hProcess = SUBPROCESS_NULL;
 
   out_process->hStdInput = startInfo.hStdInput;
+  startInfo.hStdInput = SUBPROCESS_NULL;
 
   // We don't need the handle of the primary thread in the called process.
   CloseHandle(processInfo.hThread);
+  processInfo.hThread = SUBPROCESS_NULL;
 
   if (SUBPROCESS_NULL != startInfo.hStdOutput) {
     CloseHandle(startInfo.hStdOutput);
@@ -788,19 +825,59 @@ int subprocess_create_ex(const char *const commandLine[], int options,
     if (startInfo.hStdError != startInfo.hStdOutput) {
       CloseHandle(startInfo.hStdError);
     }
+
+    startInfo.hStdOutput = SUBPROCESS_NULL;
+    startInfo.hStdError = SUBPROCESS_NULL;
   }
 
   out_process->alive = 1;
   out_process->no_wait = async_no_wait;
 
   return 0;
+
+cleanup:
+  if (out_process->stdin_file) {
+    fclose(out_process->stdin_file);
+    out_process->stdin_file = SUBPROCESS_NULL;
+  }
+
+  if (out_process->stdout_file) {
+    fclose(out_process->stdout_file);
+    if (out_process->stderr_file &&
+        (out_process->stdout_file != out_process->stderr_file)) {
+      fclose(out_process->stderr_file);
+    }
+    out_process->stdout_file = SUBPROCESS_NULL;
+    out_process->stderr_file = SUBPROCESS_NULL;
+  }
+
+  subprocess_close_handle(&rd);
+  subprocess_close_handle(&wr);
+  subprocess_close_handle(&startInfo.hStdInput);
+
+  if (startInfo.hStdOutput == startInfo.hStdError) {
+    subprocess_close_handle(&startInfo.hStdOutput);
+    startInfo.hStdError = SUBPROCESS_NULL;
+  } else {
+    subprocess_close_handle(&startInfo.hStdOutput);
+    subprocess_close_handle(&startInfo.hStdError);
+  }
+
+  subprocess_close_handle(&out_process->hEventOutput);
+  subprocess_close_handle(&out_process->hEventError);
+  subprocess_close_handle(&processInfo.hThread);
+  subprocess_close_handle(&processInfo.hProcess);
+
+  return -1;
 #else
-  int stdinfd[2];
-  int stdoutfd[2];
-  int stderrfd[2];
+  int stdinfd[2] = {-1, -1};
+  int stdoutfd[2] = {-1, -1};
+  int stderrfd[2] = {-1, -1};
   int fd, fd_flags;
   int async_no_wait;
-  pid_t child;
+  int actions_created = 0;
+  int result = -1;
+  pid_t child = 0;
   extern char **environ;
   char *const empty_environment[1] = {SUBPROCESS_NULL};
   posix_spawn_file_actions_t actions;
@@ -821,18 +898,20 @@ int subprocess_create_ex(const char *const commandLine[], int options,
     }
   }
 
+  memset(out_process, 0, sizeof(*out_process));
+
   if (0 != pipe(stdinfd)) {
-    return -1;
+    goto cleanup;
   }
 
   if (0 != pipe(stdoutfd)) {
-    return -1;
+    goto cleanup;
   }
 
   if (subprocess_option_combined_stdout_stderr !=
       (options & subprocess_option_combined_stdout_stderr)) {
     if (0 != pipe(stderrfd)) {
-      return -1;
+      goto cleanup;
     }
   }
 
@@ -854,61 +933,54 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   }
 
   if (0 != posix_spawn_file_actions_init(&actions)) {
-    return -1;
+    goto cleanup;
   }
+  actions_created = 1;
 
   // Set working directory
   if (process_cwd) {
     if (0 != posix_spawn_file_actions_addchdir_np(&actions, process_cwd)) {
-      posix_spawn_file_actions_destroy(&actions);
-      return -1;
+      goto cleanup;
     }
   }
 
   // Close the stdin write end
   if (0 != posix_spawn_file_actions_addclose(&actions, stdinfd[1])) {
-    posix_spawn_file_actions_destroy(&actions);
-    return -1;
+    goto cleanup;
   }
 
   // Map the read end to stdin
   if (0 !=
       posix_spawn_file_actions_adddup2(&actions, stdinfd[0], STDIN_FILENO)) {
-    posix_spawn_file_actions_destroy(&actions);
-    return -1;
+    goto cleanup;
   }
 
   // Close the stdout read end
   if (0 != posix_spawn_file_actions_addclose(&actions, stdoutfd[0])) {
-    posix_spawn_file_actions_destroy(&actions);
-    return -1;
+    goto cleanup;
   }
 
   // Map the write end to stdout
   if (0 !=
       posix_spawn_file_actions_adddup2(&actions, stdoutfd[1], STDOUT_FILENO)) {
-    posix_spawn_file_actions_destroy(&actions);
-    return -1;
+    goto cleanup;
   }
 
   if (subprocess_option_combined_stdout_stderr ==
       (options & subprocess_option_combined_stdout_stderr)) {
     if (0 != posix_spawn_file_actions_adddup2(&actions, STDOUT_FILENO,
                                               STDERR_FILENO)) {
-      posix_spawn_file_actions_destroy(&actions);
-      return -1;
+      goto cleanup;
     }
   } else {
     // Close the stderr read end
     if (0 != posix_spawn_file_actions_addclose(&actions, stderrfd[0])) {
-      posix_spawn_file_actions_destroy(&actions);
-      return -1;
+      goto cleanup;
     }
     // Map the write end to stdout
     if (0 != posix_spawn_file_actions_adddup2(&actions, stderrfd[1],
                                               STDERR_FILENO)) {
-      posix_spawn_file_actions_destroy(&actions);
-      return -1;
+      goto cleanup;
     }
   }
 
@@ -922,15 +994,13 @@ int subprocess_create_ex(const char *const commandLine[], int options,
     if (0 != posix_spawnp(&child, commandLine[0], &actions, SUBPROCESS_NULL,
                           SUBPROCESS_CONST_CAST(char *const *, commandLine),
                           used_environment)) {
-      posix_spawn_file_actions_destroy(&actions);
-      return -1;
+      goto cleanup;
     }
   } else {
     if (0 != posix_spawn(&child, commandLine[0], &actions, SUBPROCESS_NULL,
                          SUBPROCESS_CONST_CAST(char *const *, commandLine),
                          used_environment)) {
-      posix_spawn_file_actions_destroy(&actions);
-      return -1;
+      goto cleanup;
     }
   }
 #ifdef __clang__
@@ -939,13 +1009,23 @@ int subprocess_create_ex(const char *const commandLine[], int options,
 
   // Close the stdin read end
   close(stdinfd[0]);
+  stdinfd[0] = -1;
   // Store the stdin write end
   out_process->stdin_file = fdopen(stdinfd[1], "wb");
+  if (SUBPROCESS_NULL == out_process->stdin_file) {
+    goto cleanup;
+  }
+  stdinfd[1] = -1;
 
   // Close the stdout write end
   close(stdoutfd[1]);
+  stdoutfd[1] = -1;
   // Store the stdout read end
   out_process->stdout_file = fdopen(stdoutfd[0], "rb");
+  if (SUBPROCESS_NULL == out_process->stdout_file) {
+    goto cleanup;
+  }
+  stdoutfd[0] = -1;
 
   // Set non blocking if we are async and asked not to wait.
   if (async_no_wait) {
@@ -960,8 +1040,13 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   } else {
     // Close the stderr write end
     close(stderrfd[1]);
+    stderrfd[1] = -1;
     // Store the stderr read end
     out_process->stderr_file = fdopen(stderrfd[0], "rb");
+    if (SUBPROCESS_NULL == out_process->stderr_file) {
+      goto cleanup;
+    }
+    stderrfd[0] = -1;
 
     // Set non blocking if we are async and asked not to wait.
     if (async_no_wait) {
@@ -973,12 +1058,60 @@ int subprocess_create_ex(const char *const commandLine[], int options,
 
   // Store the child's pid
   out_process->child = child;
+  child = 0;
 
   out_process->alive = 1;
   out_process->no_wait = async_no_wait;
 
-  posix_spawn_file_actions_destroy(&actions);
-  return 0;
+  result = 0;
+
+cleanup:
+  if (actions_created) {
+    posix_spawn_file_actions_destroy(&actions);
+  }
+
+  if (0 != result) {
+    if (child) {
+      kill(child, 9);
+      waitpid(child, SUBPROCESS_NULL, 0);
+    }
+
+    if (out_process->stdin_file) {
+      fclose(out_process->stdin_file);
+      out_process->stdin_file = SUBPROCESS_NULL;
+    }
+
+    if (out_process->stdout_file) {
+      fclose(out_process->stdout_file);
+      if (out_process->stderr_file &&
+          (out_process->stdout_file != out_process->stderr_file)) {
+        fclose(out_process->stderr_file);
+      }
+      out_process->stdout_file = SUBPROCESS_NULL;
+      out_process->stderr_file = SUBPROCESS_NULL;
+    }
+  }
+
+  if (-1 != stdinfd[0]) {
+    close(stdinfd[0]);
+  }
+  if (-1 != stdinfd[1]) {
+    close(stdinfd[1]);
+  }
+  if (-1 != stdoutfd[0]) {
+    close(stdoutfd[0]);
+  }
+  if (-1 != stdoutfd[1]) {
+    close(stdoutfd[1]);
+  }
+  if (-1 != stderrfd[0]) {
+    close(stderrfd[0]);
+  }
+  if (-1 != stderrfd[1]) {
+    close(stderrfd[1]);
+  }
+
+  return result;
 #endif
 }
 
