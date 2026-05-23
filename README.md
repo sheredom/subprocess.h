@@ -26,16 +26,19 @@ wait for them to complete.
 To launch a process you call `subprocess_create` like so:
 
 ```c
-const char *command_line[] = {"echo", "\"Hello, world!\"", NULL};
+const char *command_line[] = {"echo", "Hello, world!", NULL};
 struct subprocess_s subprocess;
-int result = subprocess_create(command_line, 0, &subprocess);
+int result = subprocess_create(command_line, subprocess_option_search_user_path,
+                               &subprocess);
 if (0 != result) {
   // an error occurred!
 }
 ```
 
 You specify an array of string for the command line - terminating the array with
-a `NULL` element.
+a `NULL` element. The example uses `subprocess_option_search_user_path` so the
+`echo` executable can be found via the user's `PATH`; alternatively pass an
+absolute or relative path to the executable.
 
 If the process is created successfully then 0 is returned from
 `subprocess_create`.
@@ -155,10 +158,11 @@ The `subprocess_create_ex` entry-point contains an additional argument
 `NULL` entry:
 
 ```c
-const char *command_line[] = {"echo", "\"Hello, world!\"", NULL};
+const char *command_line[] = {"echo", "Hello, world!", NULL};
 const char *environment[] = {"FOO=BAR", "HAZ=BAZ", NULL};
 struct subprocess_s subprocess;
-int result = subprocess_create_ex(command_line, 0, environment, NULL, &subprocess);
+int result = subprocess_create_ex(command_line, subprocess_option_search_user_path,
+                                  environment, NULL, &subprocess);
 if (0 != result) {
   // an error occurred!
 }
@@ -181,9 +185,12 @@ If the `options` argument of `subprocess_create` contains
 will be launched with no visible window.
 
 ```c
-const char *command_line[] = {"echo", "\"Hello, world!\"", NULL};
+const char *command_line[] = {"echo", "Hello, world!", NULL};
 struct subprocess_s subprocess;
-int result = subprocess_create(command_line, subprocess_option_no_window, &subprocess);
+int result = subprocess_create(command_line,
+                               subprocess_option_no_window |
+                                   subprocess_option_search_user_path,
+                               &subprocess);
 if (0 != result) {
   // an error occurred!
 }
