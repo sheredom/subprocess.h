@@ -117,8 +117,9 @@ extern "C" {
 /// @brief Create a process.
 /// @param command_line An array of strings for the command line to execute for
 /// this process. The last element must be NULL to signify the end of the array.
-/// The memory backing this parameter only needs to persist until this function
-/// returns.
+/// On Windows these strings are interpreted as UTF-8 and passed to the Unicode
+/// process creation APIs. The memory backing this parameter only needs to
+/// persist until this function returns.
 /// @param options A bit field of subprocess_option_e's to pass.
 /// @param out_process The newly created process.
 /// @return On success zero is returned. On failure a non-zero
@@ -131,14 +132,17 @@ subprocess_weak int subprocess_create(const char *const command_line[],
 /// @brief Create a process (extended create).
 /// @param command_line An array of strings for the command line to execute for
 /// this process. The last element must be NULL to signify the end of the array.
-/// The memory backing this parameter only needs to persist until this function
-/// returns.
+/// On Windows these strings are interpreted as UTF-8 and passed to the Unicode
+/// process creation APIs. The memory backing this parameter only needs to
+/// persist until this function returns.
 /// @param options A bit field of subprocess_option_e's to pass.
 /// @param environment An optional array of strings for the environment to use
 /// for a child process (each element of the form FOO=BAR). The last element
-/// must be NULL to signify the end of the array.
+/// must be NULL to signify the end of the array. On Windows these strings are
+/// interpreted as UTF-8.
 /// @param process_cwd The current working directory of the newly created
-/// process. If NULL, will be the same as the parent process.
+/// process. If NULL, will be the same as the parent process. On Windows this
+/// string is interpreted as UTF-8.
 /// @param out_process The newly created process.
 /// @return On success zero is returned. On failure a non-zero
 /// `subprocess_error_e` value is returned; inspect `errno` on POSIX platforms
@@ -269,6 +273,8 @@ subprocess_weak int subprocess_alive(struct subprocess_s *const process);
 
 #if defined(_WIN32)
 
+#include <wchar.h>
+
 #if (_MSC_VER < 1920)
 #ifdef _WIN64
 typedef __int64 subprocess_intptr_t;
@@ -291,7 +297,7 @@ typedef size_t subprocess_size_t;
 
 typedef struct _PROCESS_INFORMATION *LPPROCESS_INFORMATION;
 typedef struct _SECURITY_ATTRIBUTES *LPSECURITY_ATTRIBUTES;
-typedef struct _STARTUPINFOA *LPSTARTUPINFOA;
+typedef struct _STARTUPINFOW *LPSTARTUPINFOW;
 typedef struct _OVERLAPPED *LPOVERLAPPED;
 
 #ifdef __clang__
@@ -321,9 +327,9 @@ struct subprocess_security_attributes_s {
 
 struct subprocess_startup_info_s {
   unsigned long cb;
-  char *lpReserved;
-  char *lpDesktop;
-  char *lpTitle;
+  wchar_t *lpReserved;
+  wchar_t *lpDesktop;
+  wchar_t *lpTitle;
   unsigned long dwX;
   unsigned long dwY;
   unsigned long dwXSize;
@@ -382,9 +388,12 @@ __declspec(dllimport) void *__stdcall CreateFileA(const char *, unsigned long,
                                                   void *);
 __declspec(dllimport) void *__stdcall CreateEventA(LPSECURITY_ATTRIBUTES, int,
                                                    int, const char *);
-__declspec(dllimport) int __stdcall CreateProcessA(
-    const char *, char *, LPSECURITY_ATTRIBUTES, LPSECURITY_ATTRIBUTES, int,
-    unsigned long, void *, const char *, LPSTARTUPINFOA, LPPROCESS_INFORMATION);
+__declspec(dllimport) int __stdcall CreateProcessW(
+    const wchar_t *, wchar_t *, LPSECURITY_ATTRIBUTES, LPSECURITY_ATTRIBUTES,
+    int, unsigned long, void *, const wchar_t *, LPSTARTUPINFOW,
+    LPPROCESS_INFORMATION);
+__declspec(dllimport) int __stdcall MultiByteToWideChar(
+    unsigned int, unsigned long, const char *, int, wchar_t *, int);
 __declspec(dllimport) int __stdcall CloseHandle(void *);
 __declspec(dllimport) unsigned long __stdcall WaitForSingleObject(
     void *, unsigned long);
@@ -602,21 +611,28 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   void *rd = SUBPROCESS_NULL;
   void *wr = SUBPROCESS_NULL;
   char *commandLineCombined;
+  wchar_t *commandLineCombinedWide = SUBPROCESS_NULL;
+  wchar_t *process_cwd_wide = SUBPROCESS_NULL;
   subprocess_size_t len;
+  int wide_len;
   int i, j;
   int need_quoting;
   unsigned long flags = 0;
   unsigned long last_error = 0;
   int result = subprocess_error_unknown;
+  const unsigned int codePageUtf8 = 65001;
+  const unsigned long mbErrInvalidChars = 0x00000008;
   const unsigned long startFUseStdHandles = 0x00000100;
   const unsigned long handleFlagInherit = 0x00000001;
   const unsigned long createNoWindow = 0x08000000;
+  const unsigned long createUnicodeEnvironment = 0x00000400;
   struct subprocess_subprocess_information_s processInfo = {SUBPROCESS_NULL,
                                                             SUBPROCESS_NULL, 0,
                                                             0};
   struct subprocess_security_attributes_s saAttr = {sizeof(saAttr),
                                                     SUBPROCESS_NULL, 1};
-  char *used_environment = SUBPROCESS_NULL;
+  wchar_t empty_environment[2] = {0, 0};
+  wchar_t *used_environment = SUBPROCESS_NULL;
   struct subprocess_startup_info_s startInfo = {0,
                                                 SUBPROCESS_NULL,
                                                 SUBPROCESS_NULL,
@@ -655,37 +671,70 @@ int subprocess_create_ex(const char *const commandLine[], int options,
 
   if (subprocess_option_inherit_environment !=
       (options & subprocess_option_inherit_environment)) {
+    flags |= createUnicodeEnvironment;
+
     if (SUBPROCESS_NULL == environment) {
-      used_environment = SUBPROCESS_CONST_CAST(char *, "\0\0");
+      used_environment = empty_environment;
     } else {
-      // We always end with two null terminators.
-      len = 2;
+      // We always end with two null terminators. MultiByteToWideChar includes
+      // each environment string's null terminator, so start with one extra.
+      len = 1;
 
       for (i = 0; environment[i]; i++) {
-        for (j = 0; '\0' != environment[i][j]; j++) {
-          len++;
+        wide_len = MultiByteToWideChar(codePageUtf8, mbErrInvalidChars,
+                                       environment[i], -1, SUBPROCESS_NULL, 0);
+        if (0 == wide_len) {
+          result = subprocess_error_from_windows_error(GetLastError());
+          if (subprocess_error_unknown == result) {
+            result = subprocess_error_spawn;
+          }
+          goto cleanup;
         }
 
-        // For the null terminator too.
-        len++;
+        len += SUBPROCESS_CAST(subprocess_size_t, wide_len);
       }
 
-      used_environment = SUBPROCESS_CAST(char *, _alloca(len));
+      if (((SUBPROCESS_CAST(subprocess_size_t, -1)) / sizeof(wchar_t)) < len) {
+        result = subprocess_error_no_memory;
+        goto cleanup;
+      }
 
-      // Re-use len for the insertion position
+      used_environment = SUBPROCESS_CAST(wchar_t *,
+                                         _alloca(len * sizeof(wchar_t)));
+      if (!used_environment) {
+        result = subprocess_error_no_memory;
+        goto cleanup;
+      }
+
+      // Re-use len for the insertion position.
       len = 0;
 
       for (i = 0; environment[i]; i++) {
-        for (j = 0; '\0' != environment[i][j]; j++) {
-          used_environment[len++] = environment[i][j];
+        wide_len = MultiByteToWideChar(codePageUtf8, mbErrInvalidChars,
+                                       environment[i], -1, SUBPROCESS_NULL, 0);
+        if (0 == wide_len) {
+          result = subprocess_error_from_windows_error(GetLastError());
+          if (subprocess_error_unknown == result) {
+            result = subprocess_error_spawn;
+          }
+          goto cleanup;
         }
 
-        used_environment[len++] = '\0';
+        if (0 == MultiByteToWideChar(codePageUtf8, mbErrInvalidChars,
+                                     environment[i], -1,
+                                     &used_environment[len], wide_len)) {
+          result = subprocess_error_from_windows_error(GetLastError());
+          if (subprocess_error_unknown == result) {
+            result = subprocess_error_spawn;
+          }
+          goto cleanup;
+        }
+
+        len += SUBPROCESS_CAST(subprocess_size_t, wide_len);
       }
 
-      // End with the two null terminators.
-      used_environment[len++] = '\0';
-      used_environment[len++] = '\0';
+      // End with the second null terminator.
+      used_environment[len++] = 0;
     }
   } else {
     if (SUBPROCESS_NULL != environment) {
@@ -887,16 +936,72 @@ int subprocess_create_ex(const char *const commandLine[], int options,
 
   commandLineCombined[len] = '\0';
 
-  if (!CreateProcessA(
+  wide_len = MultiByteToWideChar(codePageUtf8, mbErrInvalidChars,
+                                 commandLineCombined, -1, SUBPROCESS_NULL, 0);
+  if (0 == wide_len) {
+    result = subprocess_error_from_windows_error(GetLastError());
+    if (subprocess_error_unknown == result) {
+      result = subprocess_error_spawn;
+    }
+    goto cleanup;
+  }
+
+  commandLineCombinedWide = SUBPROCESS_CAST(wchar_t *,
+      _alloca(SUBPROCESS_CAST(subprocess_size_t, wide_len) * sizeof(wchar_t)));
+  if (!commandLineCombinedWide) {
+    result = subprocess_error_no_memory;
+    goto cleanup;
+  }
+
+  if (0 == MultiByteToWideChar(codePageUtf8, mbErrInvalidChars,
+                               commandLineCombined, -1,
+                               commandLineCombinedWide, wide_len)) {
+    result = subprocess_error_from_windows_error(GetLastError());
+    if (subprocess_error_unknown == result) {
+      result = subprocess_error_spawn;
+    }
+    goto cleanup;
+  }
+
+  if (process_cwd) {
+    wide_len = MultiByteToWideChar(codePageUtf8, mbErrInvalidChars, process_cwd,
+                                   -1, SUBPROCESS_NULL, 0);
+    if (0 == wide_len) {
+      result = subprocess_error_from_windows_error(GetLastError());
+      if (subprocess_error_unknown == result) {
+        result = subprocess_error_spawn;
+      }
+      goto cleanup;
+    }
+
+    process_cwd_wide = SUBPROCESS_CAST(
+        wchar_t *, _alloca(SUBPROCESS_CAST(subprocess_size_t, wide_len) *
+                           sizeof(wchar_t)));
+    if (!process_cwd_wide) {
+      result = subprocess_error_no_memory;
+      goto cleanup;
+    }
+
+    if (0 == MultiByteToWideChar(codePageUtf8, mbErrInvalidChars, process_cwd,
+                                 -1, process_cwd_wide, wide_len)) {
+      result = subprocess_error_from_windows_error(GetLastError());
+      if (subprocess_error_unknown == result) {
+        result = subprocess_error_spawn;
+      }
+      goto cleanup;
+    }
+  }
+
+  if (!CreateProcessW(
           SUBPROCESS_NULL,
-          commandLineCombined, // command line
-          SUBPROCESS_NULL,     // process security attributes
-          SUBPROCESS_NULL,     // primary thread security attributes
-          1,                   // handles are inherited
-          flags,               // creation flags
-          used_environment,    // used environment
-          process_cwd,         // use specified current directory
-          SUBPROCESS_PTR_CAST(LPSTARTUPINFOA,
+          commandLineCombinedWide, // command line
+          SUBPROCESS_NULL,         // process security attributes
+          SUBPROCESS_NULL,         // primary thread security attributes
+          1,                       // handles are inherited
+          flags,                   // creation flags
+          used_environment,        // used environment
+          process_cwd_wide,        // use specified current directory
+          SUBPROCESS_PTR_CAST(LPSTARTUPINFOW,
                               &startInfo), // STARTUPINFO pointer
           SUBPROCESS_PTR_CAST(LPPROCESS_INFORMATION, &processInfo))) {
     result = subprocess_error_from_windows_error(GetLastError());

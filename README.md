@@ -38,7 +38,8 @@ if (0 != result) {
 You specify an array of string for the command line - terminating the array with
 a `NULL` element. The example uses `subprocess_option_search_user_path` so the
 `echo` executable can be found via the user's `PATH`; alternatively pass an
-absolute or relative path to the executable.
+absolute or relative path to the executable. On Windows, command line strings
+are interpreted as UTF-8 and passed to the Unicode process creation APIs.
 
 If the process is created successfully then 0 is returned from
 `subprocess_create`. If process creation fails, a non-zero
@@ -174,7 +175,9 @@ if (0 != result) {
 
 This lets you specify custom environments for spawned subprocesses. The fourth
 argument lets you optionally specify the child process current working directory;
-pass `NULL` to inherit the parent's current working directory.
+pass `NULL` to inherit the parent's current working directory. On Windows,
+custom environment entries and the current working directory string are
+interpreted as UTF-8.
 
 Note though that you **cannot** specify `subprocess_option_inherit_environment`
 with a custom environment. If you want to merge some custom environment with the
