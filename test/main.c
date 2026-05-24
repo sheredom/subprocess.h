@@ -35,8 +35,10 @@ __declspec(dllimport) int __stdcall SetEnvironmentVariableA(const char *,
 
 #if defined(_WIN32)
 __declspec(dllimport) void *__stdcall GetCurrentProcess(void);
+__declspec(dllimport) unsigned long __stdcall GetLastError(void);
 __declspec(dllimport) int __stdcall GetProcessHandleCount(void *,
                                                            unsigned long *);
+__declspec(dllimport) void __stdcall SetLastError(unsigned long);
 #include <direct.h>
 #define subprocess_test_getcwd _getcwd
 #define subprocess_test_mkdir(path) _mkdir(path)
@@ -100,6 +102,27 @@ UTEST(create, subprocess_destroy_is_idempotent) {
   ASSERT_EQ(0, subprocess_destroy(&process));
 
   ASSERT_EQ(0, subprocess_destroy(&process));
+}
+
+UTEST(create_ex, subprocess_create_failure_preserves_error) {
+#if defined(_WIN32)
+  const unsigned long errorFileNotFound = 2;
+#endif
+  const char *const commandLine[] = {
+      "./subprocess_this_command_should_not_exist", 0};
+  struct subprocess_s process;
+
+#if defined(_WIN32)
+  SetLastError(0);
+  ASSERT_EQ(-1, subprocess_create_ex(commandLine, 0, SUBPROCESS_NULL,
+                                     SUBPROCESS_NULL, &process));
+  ASSERT_EQ(errorFileNotFound, GetLastError());
+#else
+  errno = 0;
+  ASSERT_EQ(-1, subprocess_create_ex(commandLine, 0, SUBPROCESS_NULL,
+                                     SUBPROCESS_NULL, &process));
+  ASSERT_EQ(ENOENT, errno);
+#endif
 }
 
 UTEST(create_ex, subprocess_create_failure_does_not_leak_resources) {

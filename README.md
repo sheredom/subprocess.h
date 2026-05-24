@@ -41,7 +41,9 @@ a `NULL` element. The example uses `subprocess_option_search_user_path` so the
 absolute or relative path to the executable.
 
 If the process is created successfully then 0 is returned from
-`subprocess_create`.
+`subprocess_create`. If process creation fails, a non-zero value is returned. On
+POSIX platforms, inspect `errno` for the failure reason; on Windows, inspect
+`GetLastError()`.
 
 ### Writing to the Standard Input of a Process
 

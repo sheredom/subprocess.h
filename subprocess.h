@@ -107,7 +107,9 @@ extern "C" {
 /// returns.
 /// @param options A bit field of subprocess_option_e's to pass.
 /// @param out_process The newly created process.
-/// @return On success zero is returned.
+/// @return On success zero is returned. On failure non-zero is returned; inspect
+/// `errno` on POSIX platforms or `GetLastError()` on Windows for the failure
+/// reason.
 subprocess_weak int subprocess_create(const char *const command_line[],
                                       int options,
                                       struct subprocess_s *const out_process);
@@ -124,7 +126,9 @@ subprocess_weak int subprocess_create(const char *const command_line[],
 /// @param process_cwd The current working directory of the newly created
 /// process. If NULL, will be the same as the parent process.
 /// @param out_process The newly created process.
-/// @return On success zero is returned.
+/// @return On success zero is returned. On failure non-zero is returned; inspect
+/// `errno` on POSIX platforms or `GetLastError()` on Windows for the failure
+/// reason.
 ///
 /// If `options` contains `subprocess_option_inherit_environment`, then
 /// `environment` must be NULL.
@@ -239,6 +243,7 @@ subprocess_weak int subprocess_alive(struct subprocess_s *const process);
 #endif
 
 #if !defined(_WIN32)
+#include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <spawn.h>
@@ -343,6 +348,7 @@ struct subprocess_overlapped_s {
 #endif
 
 __declspec(dllimport) unsigned long __stdcall GetLastError(void);
+__declspec(dllimport) void __stdcall SetLastError(unsigned long);
 __declspec(dllimport) int __stdcall SetHandleInformation(void *, unsigned long,
                                                          unsigned long);
 __declspec(dllimport) int __stdcall CreatePipe(void **, void **,
@@ -531,6 +537,7 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   int i, j;
   int need_quoting;
   unsigned long flags = 0;
+  unsigned long last_error = 0;
   const unsigned long startFUseStdHandles = 0x00000100;
   const unsigned long handleFlagInherit = 0x00000001;
   const unsigned long createNoWindow = 0x08000000;
@@ -836,6 +843,8 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   return 0;
 
 cleanup:
+  last_error = GetLastError();
+
   if (out_process->stdin_file) {
     fclose(out_process->stdin_file);
     out_process->stdin_file = SUBPROCESS_NULL;
@@ -868,6 +877,8 @@ cleanup:
   subprocess_close_handle(&processInfo.hThread);
   subprocess_close_handle(&processInfo.hProcess);
 
+  SetLastError(last_error);
+
   return -1;
 #else
   int stdinfd[2] = {-1, -1};
@@ -877,6 +888,8 @@ cleanup:
   int async_no_wait;
   int actions_created = 0;
   int result = -1;
+  int saved_errno = 0;
+  int posix_error;
   pid_t child = 0;
   extern char **environ;
   char *const empty_environment[1] = {SUBPROCESS_NULL};
@@ -888,12 +901,14 @@ cleanup:
 
   if (async_no_wait && (subprocess_option_enable_async !=
                         (options & subprocess_option_enable_async))) {
+    errno = EINVAL;
     return -1;
   }
 
   if (subprocess_option_inherit_environment ==
       (options & subprocess_option_inherit_environment)) {
     if (SUBPROCESS_NULL != environment) {
+      errno = EINVAL;
       return -1;
     }
   }
@@ -901,16 +916,19 @@ cleanup:
   memset(out_process, 0, sizeof(*out_process));
 
   if (0 != pipe(stdinfd)) {
+    saved_errno = errno;
     goto cleanup;
   }
 
   if (0 != pipe(stdoutfd)) {
+    saved_errno = errno;
     goto cleanup;
   }
 
   if (subprocess_option_combined_stdout_stderr !=
       (options & subprocess_option_combined_stdout_stderr)) {
     if (0 != pipe(stderrfd)) {
+      saved_errno = errno;
       goto cleanup;
     }
   }
@@ -932,54 +950,72 @@ cleanup:
     used_environment = empty_environment;
   }
 
-  if (0 != posix_spawn_file_actions_init(&actions)) {
+  posix_error = posix_spawn_file_actions_init(&actions);
+  if (0 != posix_error) {
+    saved_errno = posix_error;
     goto cleanup;
   }
   actions_created = 1;
 
   // Set working directory
   if (process_cwd) {
-    if (0 != posix_spawn_file_actions_addchdir_np(&actions, process_cwd)) {
+    posix_error = posix_spawn_file_actions_addchdir_np(&actions, process_cwd);
+    if (0 != posix_error) {
+      saved_errno = posix_error;
       goto cleanup;
     }
   }
 
   // Close the stdin write end
-  if (0 != posix_spawn_file_actions_addclose(&actions, stdinfd[1])) {
+  posix_error = posix_spawn_file_actions_addclose(&actions, stdinfd[1]);
+  if (0 != posix_error) {
+    saved_errno = posix_error;
     goto cleanup;
   }
 
   // Map the read end to stdin
-  if (0 !=
-      posix_spawn_file_actions_adddup2(&actions, stdinfd[0], STDIN_FILENO)) {
+  posix_error =
+      posix_spawn_file_actions_adddup2(&actions, stdinfd[0], STDIN_FILENO);
+  if (0 != posix_error) {
+    saved_errno = posix_error;
     goto cleanup;
   }
 
   // Close the stdout read end
-  if (0 != posix_spawn_file_actions_addclose(&actions, stdoutfd[0])) {
+  posix_error = posix_spawn_file_actions_addclose(&actions, stdoutfd[0]);
+  if (0 != posix_error) {
+    saved_errno = posix_error;
     goto cleanup;
   }
 
   // Map the write end to stdout
-  if (0 !=
-      posix_spawn_file_actions_adddup2(&actions, stdoutfd[1], STDOUT_FILENO)) {
+  posix_error =
+      posix_spawn_file_actions_adddup2(&actions, stdoutfd[1], STDOUT_FILENO);
+  if (0 != posix_error) {
+    saved_errno = posix_error;
     goto cleanup;
   }
 
   if (subprocess_option_combined_stdout_stderr ==
       (options & subprocess_option_combined_stdout_stderr)) {
-    if (0 != posix_spawn_file_actions_adddup2(&actions, STDOUT_FILENO,
-                                              STDERR_FILENO)) {
+    posix_error = posix_spawn_file_actions_adddup2(&actions, STDOUT_FILENO,
+                                                   STDERR_FILENO);
+    if (0 != posix_error) {
+      saved_errno = posix_error;
       goto cleanup;
     }
   } else {
     // Close the stderr read end
-    if (0 != posix_spawn_file_actions_addclose(&actions, stderrfd[0])) {
+    posix_error = posix_spawn_file_actions_addclose(&actions, stderrfd[0]);
+    if (0 != posix_error) {
+      saved_errno = posix_error;
       goto cleanup;
     }
     // Map the write end to stdout
-    if (0 != posix_spawn_file_actions_adddup2(&actions, stderrfd[1],
-                                              STDERR_FILENO)) {
+    posix_error = posix_spawn_file_actions_adddup2(&actions, stderrfd[1],
+                                                   STDERR_FILENO);
+    if (0 != posix_error) {
+      saved_errno = posix_error;
       goto cleanup;
     }
   }
@@ -991,15 +1027,21 @@ cleanup:
 #endif
   if (subprocess_option_search_user_path ==
       (options & subprocess_option_search_user_path)) {
-    if (0 != posix_spawnp(&child, commandLine[0], &actions, SUBPROCESS_NULL,
-                          SUBPROCESS_CONST_CAST(char *const *, commandLine),
-                          used_environment)) {
+    posix_error = posix_spawnp(&child, commandLine[0], &actions,
+                               SUBPROCESS_NULL,
+                               SUBPROCESS_CONST_CAST(char *const *, commandLine),
+                               used_environment);
+    if (0 != posix_error) {
+      saved_errno = posix_error;
       goto cleanup;
     }
   } else {
-    if (0 != posix_spawn(&child, commandLine[0], &actions, SUBPROCESS_NULL,
-                         SUBPROCESS_CONST_CAST(char *const *, commandLine),
-                         used_environment)) {
+    posix_error = posix_spawn(&child, commandLine[0], &actions,
+                              SUBPROCESS_NULL,
+                              SUBPROCESS_CONST_CAST(char *const *, commandLine),
+                              used_environment);
+    if (0 != posix_error) {
+      saved_errno = posix_error;
       goto cleanup;
     }
   }
@@ -1013,6 +1055,7 @@ cleanup:
   // Store the stdin write end
   out_process->stdin_file = fdopen(stdinfd[1], "wb");
   if (SUBPROCESS_NULL == out_process->stdin_file) {
+    saved_errno = errno;
     goto cleanup;
   }
   stdinfd[1] = -1;
@@ -1023,6 +1066,7 @@ cleanup:
   // Store the stdout read end
   out_process->stdout_file = fdopen(stdoutfd[0], "rb");
   if (SUBPROCESS_NULL == out_process->stdout_file) {
+    saved_errno = errno;
     goto cleanup;
   }
   stdoutfd[0] = -1;
@@ -1044,6 +1088,7 @@ cleanup:
     // Store the stderr read end
     out_process->stderr_file = fdopen(stderrfd[0], "rb");
     if (SUBPROCESS_NULL == out_process->stderr_file) {
+      saved_errno = errno;
       goto cleanup;
     }
     stderrfd[0] = -1;
@@ -1066,6 +1111,10 @@ cleanup:
   result = 0;
 
 cleanup:
+  if ((0 != result) && (0 == saved_errno)) {
+    saved_errno = errno;
+  }
+
   if (actions_created) {
     posix_spawn_file_actions_destroy(&actions);
   }
@@ -1109,6 +1158,10 @@ cleanup:
   }
   if (-1 != stderrfd[1]) {
     close(stderrfd[1]);
+  }
+
+  if ((0 != result) && (0 != saved_errno)) {
+    errno = saved_errno;
   }
 
   return result;
