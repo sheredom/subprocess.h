@@ -114,13 +114,15 @@ UTEST(create_ex, subprocess_create_failure_preserves_error) {
 
 #if defined(_WIN32)
   SetLastError(0);
-  ASSERT_EQ(-1, subprocess_create_ex(commandLine, 0, SUBPROCESS_NULL,
-                                     SUBPROCESS_NULL, &process));
+  ASSERT_EQ(subprocess_error_not_found,
+            subprocess_create_ex(commandLine, 0, SUBPROCESS_NULL,
+                                 SUBPROCESS_NULL, &process));
   ASSERT_EQ(errorFileNotFound, GetLastError());
 #else
   errno = 0;
-  ASSERT_EQ(-1, subprocess_create_ex(commandLine, 0, SUBPROCESS_NULL,
-                                     SUBPROCESS_NULL, &process));
+  ASSERT_EQ(subprocess_error_not_found,
+            subprocess_create_ex(commandLine, 0, SUBPROCESS_NULL,
+                                 SUBPROCESS_NULL, &process));
   ASSERT_EQ(ENOENT, errno);
 #endif
 }
@@ -138,8 +140,9 @@ UTEST(create_ex, subprocess_create_failure_does_not_leak_resources) {
 
   for (i = 0; i < 10; i++) {
     memset(&process, 0, sizeof(process));
-    ASSERT_EQ(-1, subprocess_create_ex(commandLine, 0, SUBPROCESS_NULL,
-                                       SUBPROCESS_NULL, &process));
+    ASSERT_EQ(subprocess_error_not_found,
+              subprocess_create_ex(commandLine, 0, SUBPROCESS_NULL,
+                                   SUBPROCESS_NULL, &process));
   }
 
   after = subprocess_test_open_resource_count();

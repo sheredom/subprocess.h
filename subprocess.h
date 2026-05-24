@@ -96,6 +96,20 @@ enum subprocess_option_e {
   subprocess_option_enable_async_no_wait = 0x20
 };
 
+// Error codes returned by subprocess_create and subprocess_create_ex.
+// subprocess_error_success is always zero; all errors are non-zero.
+enum subprocess_error_e {
+  subprocess_error_success = 0,
+  subprocess_error_unknown = -1,
+  subprocess_error_invalid_options = -2,
+  subprocess_error_invalid_environment = -3,
+  subprocess_error_not_found = -4,
+  subprocess_error_permission_denied = -5,
+  subprocess_error_no_memory = -6,
+  subprocess_error_pipe = -7,
+  subprocess_error_spawn = -8
+};
+
 #if defined(__cplusplus)
 extern "C" {
 #endif
@@ -107,9 +121,9 @@ extern "C" {
 /// returns.
 /// @param options A bit field of subprocess_option_e's to pass.
 /// @param out_process The newly created process.
-/// @return On success zero is returned. On failure non-zero is returned; inspect
-/// `errno` on POSIX platforms or `GetLastError()` on Windows for the failure
-/// reason.
+/// @return On success zero is returned. On failure a non-zero
+/// `subprocess_error_e` value is returned; inspect `errno` on POSIX platforms
+/// or `GetLastError()` on Windows for the platform-specific failure reason.
 subprocess_weak int subprocess_create(const char *const command_line[],
                                       int options,
                                       struct subprocess_s *const out_process);
@@ -126,9 +140,9 @@ subprocess_weak int subprocess_create(const char *const command_line[],
 /// @param process_cwd The current working directory of the newly created
 /// process. If NULL, will be the same as the parent process.
 /// @param out_process The newly created process.
-/// @return On success zero is returned. On failure non-zero is returned; inspect
-/// `errno` on POSIX platforms or `GetLastError()` on Windows for the failure
-/// reason.
+/// @return On success zero is returned. On failure a non-zero
+/// `subprocess_error_e` value is returned; inspect `errno` on POSIX platforms
+/// or `GetLastError()` on Windows for the platform-specific failure reason.
 ///
 /// If `options` contains `subprocess_option_inherit_environment`, then
 /// `environment` must be NULL.
@@ -442,6 +456,61 @@ struct subprocess_s {
 #pragma clang diagnostic pop
 #endif
 
+#if defined(_WIN32)
+subprocess_weak int subprocess_error_from_windows_error(unsigned long error);
+int subprocess_error_from_windows_error(unsigned long error) {
+  enum {
+    errorFileNotFound = 2,
+    errorPathNotFound = 3,
+    errorTooManyOpenFiles = 4,
+    errorAccessDenied = 5,
+    errorInvalidHandle = 6,
+    errorNotEnoughMemory = 8,
+    errorOutOfMemory = 14,
+    errorInvalidDrive = 15,
+    errorBadPathname = 161,
+    errorDirectory = 267
+  };
+
+  switch (error) {
+  case errorFileNotFound:
+  case errorPathNotFound:
+  case errorInvalidDrive:
+  case errorBadPathname:
+  case errorDirectory:
+    return subprocess_error_not_found;
+  case errorAccessDenied:
+    return subprocess_error_permission_denied;
+  case errorTooManyOpenFiles:
+  case errorNotEnoughMemory:
+  case errorOutOfMemory:
+    return subprocess_error_no_memory;
+  case errorInvalidHandle:
+    return subprocess_error_pipe;
+  default:
+    return subprocess_error_unknown;
+  }
+}
+#else
+subprocess_weak int subprocess_error_from_errno(int error);
+int subprocess_error_from_errno(int error) {
+  switch (error) {
+  case ENOENT:
+  case ENOTDIR:
+    return subprocess_error_not_found;
+  case EACCES:
+  case EPERM:
+    return subprocess_error_permission_denied;
+  case EMFILE:
+  case ENFILE:
+  case ENOMEM:
+    return subprocess_error_no_memory;
+  default:
+    return subprocess_error_unknown;
+  }
+}
+#endif
+
 #if defined(__clang__)
 #if __has_warning("-Wunsafe-buffer-usage")
 #pragma clang diagnostic push
@@ -538,6 +607,7 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   int need_quoting;
   unsigned long flags = 0;
   unsigned long last_error = 0;
+  int result = subprocess_error_unknown;
   const unsigned long startFUseStdHandles = 0x00000100;
   const unsigned long handleFlagInherit = 0x00000001;
   const unsigned long createNoWindow = 0x08000000;
@@ -571,7 +641,7 @@ int subprocess_create_ex(const char *const commandLine[], int options,
 
   if (async_no_wait && (subprocess_option_enable_async !=
                         (options & subprocess_option_enable_async))) {
-    return -1;
+    return subprocess_error_invalid_options;
   }
 
   startInfo.cb = sizeof(startInfo);
@@ -619,21 +689,24 @@ int subprocess_create_ex(const char *const commandLine[], int options,
     }
   } else {
     if (SUBPROCESS_NULL != environment) {
-      return -1;
+      return subprocess_error_invalid_environment;
     }
   }
 
   if (!CreatePipe(&rd, &wr, SUBPROCESS_PTR_CAST(LPSECURITY_ATTRIBUTES, &saAttr),
                   0)) {
+    result = subprocess_error_pipe;
     goto cleanup;
   }
 
   if (!SetHandleInformation(wr, handleFlagInherit, 0)) {
+    result = subprocess_error_pipe;
     goto cleanup;
   }
 
   fd = _open_osfhandle(SUBPROCESS_PTR_CAST(subprocess_intptr_t, wr), 0);
   if (-1 == fd) {
+    result = subprocess_error_pipe;
     goto cleanup;
   }
   wr = SUBPROCESS_NULL;
@@ -649,21 +722,25 @@ int subprocess_create_ex(const char *const commandLine[], int options,
 
   if (options & subprocess_option_enable_async) {
     if (subprocess_create_named_pipe_helper(&rd, &wr)) {
+      result = subprocess_error_pipe;
       goto cleanup;
     }
   } else {
     if (!CreatePipe(&rd, &wr,
                     SUBPROCESS_PTR_CAST(LPSECURITY_ATTRIBUTES, &saAttr), 0)) {
+      result = subprocess_error_pipe;
       goto cleanup;
     }
   }
 
   if (!SetHandleInformation(rd, handleFlagInherit, 0)) {
+    result = subprocess_error_pipe;
     goto cleanup;
   }
 
   fd = _open_osfhandle(SUBPROCESS_PTR_CAST(subprocess_intptr_t, rd), 0);
   if (-1 == fd) {
+    result = subprocess_error_pipe;
     goto cleanup;
   }
   rd = SUBPROCESS_NULL;
@@ -684,21 +761,25 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   } else {
     if (options & subprocess_option_enable_async) {
       if (subprocess_create_named_pipe_helper(&rd, &wr)) {
+        result = subprocess_error_pipe;
         goto cleanup;
       }
     } else {
       if (!CreatePipe(&rd, &wr,
                       SUBPROCESS_PTR_CAST(LPSECURITY_ATTRIBUTES, &saAttr), 0)) {
+        result = subprocess_error_pipe;
         goto cleanup;
       }
     }
 
     if (!SetHandleInformation(rd, handleFlagInherit, 0)) {
+      result = subprocess_error_pipe;
       goto cleanup;
     }
 
     fd = _open_osfhandle(SUBPROCESS_PTR_CAST(subprocess_intptr_t, rd), 0);
     if (-1 == fd) {
+      result = subprocess_error_pipe;
       goto cleanup;
     }
     rd = SUBPROCESS_NULL;
@@ -721,6 +802,10 @@ int subprocess_create_ex(const char *const commandLine[], int options,
         CreateEventA(SUBPROCESS_PTR_CAST(LPSECURITY_ATTRIBUTES, &saAttr), 1, 1,
                      SUBPROCESS_NULL);
     if (!out_process->hEventOutput || !out_process->hEventError) {
+      result = subprocess_error_from_windows_error(GetLastError());
+      if (subprocess_error_unknown == result) {
+        result = subprocess_error_no_memory;
+      }
       goto cleanup;
     }
   } else {
@@ -760,6 +845,7 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   commandLineCombined = SUBPROCESS_CAST(char *, _alloca(len));
 
   if (!commandLineCombined) {
+    result = subprocess_error_no_memory;
     goto cleanup;
   }
 
@@ -813,6 +899,10 @@ int subprocess_create_ex(const char *const commandLine[], int options,
           SUBPROCESS_PTR_CAST(LPSTARTUPINFOA,
                               &startInfo), // STARTUPINFO pointer
           SUBPROCESS_PTR_CAST(LPPROCESS_INFORMATION, &processInfo))) {
+    result = subprocess_error_from_windows_error(GetLastError());
+    if (subprocess_error_unknown == result) {
+      result = subprocess_error_spawn;
+    }
     goto cleanup;
   }
 
@@ -844,6 +934,10 @@ int subprocess_create_ex(const char *const commandLine[], int options,
 
 cleanup:
   last_error = GetLastError();
+
+  if (subprocess_error_unknown == result) {
+    result = subprocess_error_from_windows_error(last_error);
+  }
 
   if (out_process->stdin_file) {
     fclose(out_process->stdin_file);
@@ -879,7 +973,7 @@ cleanup:
 
   SetLastError(last_error);
 
-  return -1;
+  return result;
 #else
   int stdinfd[2] = {-1, -1};
   int stdoutfd[2] = {-1, -1};
@@ -887,7 +981,7 @@ cleanup:
   int fd, fd_flags;
   int async_no_wait;
   int actions_created = 0;
-  int result = -1;
+  int result = subprocess_error_unknown;
   int saved_errno = 0;
   int posix_error;
   pid_t child = 0;
@@ -902,14 +996,14 @@ cleanup:
   if (async_no_wait && (subprocess_option_enable_async !=
                         (options & subprocess_option_enable_async))) {
     errno = EINVAL;
-    return -1;
+    return subprocess_error_invalid_options;
   }
 
   if (subprocess_option_inherit_environment ==
       (options & subprocess_option_inherit_environment)) {
     if (SUBPROCESS_NULL != environment) {
       errno = EINVAL;
-      return -1;
+      return subprocess_error_invalid_environment;
     }
   }
 
@@ -917,11 +1011,13 @@ cleanup:
 
   if (0 != pipe(stdinfd)) {
     saved_errno = errno;
+    result = subprocess_error_pipe;
     goto cleanup;
   }
 
   if (0 != pipe(stdoutfd)) {
     saved_errno = errno;
+    result = subprocess_error_pipe;
     goto cleanup;
   }
 
@@ -929,6 +1025,7 @@ cleanup:
       (options & subprocess_option_combined_stdout_stderr)) {
     if (0 != pipe(stderrfd)) {
       saved_errno = errno;
+      result = subprocess_error_pipe;
       goto cleanup;
     }
   }
@@ -953,6 +1050,10 @@ cleanup:
   posix_error = posix_spawn_file_actions_init(&actions);
   if (0 != posix_error) {
     saved_errno = posix_error;
+    result = subprocess_error_from_errno(posix_error);
+    if (subprocess_error_unknown == result) {
+      result = subprocess_error_spawn;
+    }
     goto cleanup;
   }
   actions_created = 1;
@@ -962,6 +1063,10 @@ cleanup:
     posix_error = posix_spawn_file_actions_addchdir_np(&actions, process_cwd);
     if (0 != posix_error) {
       saved_errno = posix_error;
+      result = subprocess_error_from_errno(posix_error);
+      if (subprocess_error_unknown == result) {
+        result = subprocess_error_spawn;
+      }
       goto cleanup;
     }
   }
@@ -970,6 +1075,10 @@ cleanup:
   posix_error = posix_spawn_file_actions_addclose(&actions, stdinfd[1]);
   if (0 != posix_error) {
     saved_errno = posix_error;
+    result = subprocess_error_from_errno(posix_error);
+    if (subprocess_error_unknown == result) {
+      result = subprocess_error_spawn;
+    }
     goto cleanup;
   }
 
@@ -978,6 +1087,10 @@ cleanup:
       posix_spawn_file_actions_adddup2(&actions, stdinfd[0], STDIN_FILENO);
   if (0 != posix_error) {
     saved_errno = posix_error;
+    result = subprocess_error_from_errno(posix_error);
+    if (subprocess_error_unknown == result) {
+      result = subprocess_error_spawn;
+    }
     goto cleanup;
   }
 
@@ -985,6 +1098,10 @@ cleanup:
   posix_error = posix_spawn_file_actions_addclose(&actions, stdoutfd[0]);
   if (0 != posix_error) {
     saved_errno = posix_error;
+    result = subprocess_error_from_errno(posix_error);
+    if (subprocess_error_unknown == result) {
+      result = subprocess_error_spawn;
+    }
     goto cleanup;
   }
 
@@ -993,6 +1110,10 @@ cleanup:
       posix_spawn_file_actions_adddup2(&actions, stdoutfd[1], STDOUT_FILENO);
   if (0 != posix_error) {
     saved_errno = posix_error;
+    result = subprocess_error_from_errno(posix_error);
+    if (subprocess_error_unknown == result) {
+      result = subprocess_error_spawn;
+    }
     goto cleanup;
   }
 
@@ -1002,6 +1123,10 @@ cleanup:
                                                    STDERR_FILENO);
     if (0 != posix_error) {
       saved_errno = posix_error;
+      result = subprocess_error_from_errno(posix_error);
+      if (subprocess_error_unknown == result) {
+        result = subprocess_error_spawn;
+      }
       goto cleanup;
     }
   } else {
@@ -1009,6 +1134,10 @@ cleanup:
     posix_error = posix_spawn_file_actions_addclose(&actions, stderrfd[0]);
     if (0 != posix_error) {
       saved_errno = posix_error;
+      result = subprocess_error_from_errno(posix_error);
+      if (subprocess_error_unknown == result) {
+        result = subprocess_error_spawn;
+      }
       goto cleanup;
     }
     // Map the write end to stdout
@@ -1016,6 +1145,10 @@ cleanup:
                                                    STDERR_FILENO);
     if (0 != posix_error) {
       saved_errno = posix_error;
+      result = subprocess_error_from_errno(posix_error);
+      if (subprocess_error_unknown == result) {
+        result = subprocess_error_spawn;
+      }
       goto cleanup;
     }
   }
@@ -1033,6 +1166,10 @@ cleanup:
                                used_environment);
     if (0 != posix_error) {
       saved_errno = posix_error;
+      result = subprocess_error_from_errno(posix_error);
+      if (subprocess_error_unknown == result) {
+        result = subprocess_error_spawn;
+      }
       goto cleanup;
     }
   } else {
@@ -1042,6 +1179,10 @@ cleanup:
                               used_environment);
     if (0 != posix_error) {
       saved_errno = posix_error;
+      result = subprocess_error_from_errno(posix_error);
+      if (subprocess_error_unknown == result) {
+        result = subprocess_error_spawn;
+      }
       goto cleanup;
     }
   }
@@ -1056,6 +1197,7 @@ cleanup:
   out_process->stdin_file = fdopen(stdinfd[1], "wb");
   if (SUBPROCESS_NULL == out_process->stdin_file) {
     saved_errno = errno;
+    result = subprocess_error_from_errno(saved_errno);
     goto cleanup;
   }
   stdinfd[1] = -1;
@@ -1067,6 +1209,7 @@ cleanup:
   out_process->stdout_file = fdopen(stdoutfd[0], "rb");
   if (SUBPROCESS_NULL == out_process->stdout_file) {
     saved_errno = errno;
+    result = subprocess_error_from_errno(saved_errno);
     goto cleanup;
   }
   stdoutfd[0] = -1;
@@ -1089,6 +1232,7 @@ cleanup:
     out_process->stderr_file = fdopen(stderrfd[0], "rb");
     if (SUBPROCESS_NULL == out_process->stderr_file) {
       saved_errno = errno;
+      result = subprocess_error_from_errno(saved_errno);
       goto cleanup;
     }
     stderrfd[0] = -1;
@@ -1113,6 +1257,10 @@ cleanup:
 cleanup:
   if ((0 != result) && (0 == saved_errno)) {
     saved_errno = errno;
+  }
+
+  if ((subprocess_error_unknown == result) && (0 != saved_errno)) {
+    result = subprocess_error_from_errno(saved_errno);
   }
 
   if (actions_created) {
