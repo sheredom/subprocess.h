@@ -1,5 +1,5 @@
 #include "subprocess.h"
 #include "utest.h"
 
-#define SUBPROCESS_SUITE c
+#define SUBPROCESS_SUITE cpp14
 #include "test_shared.h"
