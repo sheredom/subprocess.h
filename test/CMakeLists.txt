@@ -72,7 +72,7 @@ endforeach()
 # Base warning flags and whether -std= flags are supported.
 # MSVC and clang-cl use /std: and don't accept -std=, so we skip
 # the standard flag for those compilers.
-set(SUBPROCESS_MSVC_WARNINGS "/Wall /WX /wd4514 /wd4710 /wd4711 /wd5045")
+set(SUBPROCESS_MSVC_WARNINGS "/Wall /WX /wd4514 /wd4668 /wd4710 /wd4711 /wd5039 /wd5045")
 if("${CMAKE_C_COMPILER_ID}" STREQUAL "GNU")
   set(SUBPROCESS_C_WARNINGS "-Wall -Wextra -Werror")
   set(SUBPROCESS_C_USE_STD_FLAG TRUE)
