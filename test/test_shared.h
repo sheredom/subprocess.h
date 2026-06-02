@@ -45,7 +45,14 @@
 #include <errno.h>
 
 #if defined(_WIN32)
-#include <windows.h>
+UTEST_C_FUNC __declspec(dllimport) void __stdcall Sleep(unsigned long);
+UTEST_C_FUNC __declspec(dllimport) int __stdcall SetEnvironmentVariableA(
+    const char *, const char *);
+UTEST_C_FUNC __declspec(dllimport) void *__stdcall GetCurrentProcess(void);
+UTEST_C_FUNC __declspec(dllimport) unsigned long __stdcall GetLastError(void);
+UTEST_C_FUNC __declspec(dllimport) int __stdcall GetProcessHandleCount(
+    void *, unsigned long *);
+UTEST_C_FUNC __declspec(dllimport) void __stdcall SetLastError(unsigned long);
 #include <direct.h>
 #define subprocess_test_getcwd _getcwd
 #define subprocess_test_mkdir(path) _mkdir(path)
