@@ -828,6 +828,12 @@ SUBPROCESS_TEST(subprocess, poll_stdout_async) {
     alive = subprocess_alive(&process);
   }
 
+  do {
+    bytes_read = subprocess_read_stdout(&process, data + index,
+                                        sizeof(data) - 1 - index);
+    index += bytes_read;
+  } while (0 != bytes_read);
+
   ASSERT_EQ(212992u, index);
 
   for (index = 0; index < 16384; index++) {
@@ -883,6 +889,12 @@ SUBPROCESS_TEST(subprocess, poll_stdout_async_wait_first) {
     alive = subprocess_alive(&process);
   }
 
+  do {
+    bytes_read = subprocess_read_stdout(&process, data + index,
+                                        sizeof(data) - 1 - index);
+    index += bytes_read;
+  } while (0 != bytes_read);
+
   ASSERT_EQ(212992u, index);
 
   for (index = 0; index < 16384; index++) {
@@ -926,6 +938,12 @@ SUBPROCESS_TEST(subprocess, poll_stderr_async) {
 
     alive = subprocess_alive(&process);
   }
+
+  do {
+    bytes_read = subprocess_read_stderr(&process, data + index,
+                                        sizeof(data) - 1 - index);
+    index += bytes_read;
+  } while (0 != bytes_read);
 
   ASSERT_EQ(212992u, index);
 
@@ -981,6 +999,12 @@ SUBPROCESS_TEST(subprocess, poll_stderr_async_wait_first) {
 
     alive = subprocess_alive(&process);
   }
+
+  do {
+    bytes_read = subprocess_read_stderr(&process, data + index,
+                                        sizeof(data) - 1 - index);
+    index += bytes_read;
+  } while (0 != bytes_read);
 
   ASSERT_EQ(212992u, index);
 
