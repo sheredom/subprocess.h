@@ -81,10 +81,4 @@ jobs:
     - name: Test
       working-directory: ${{github.workspace}}/build
       shell: bash
-      run: if [ "${{ matrix.os }}" == "windows-latest" ] && [ "${{ matrix.compiler }}" != "gcc" ]; then cd ${{ matrix.type }}; fi; ./subprocess_test
-
-    - name: Test with Multithreading
-      working-directory: ${{github.workspace}}/build
-      shell: bash
-      if: startsWith(matrix.os, 'windows')
-      run: if [ "${{ matrix.os }}" == "windows-latest" ] && [ "${{ matrix.compiler }}" != "gcc" ]; then cd ${{ matrix.type }}; fi; ./subprocess_mt_test
+      run: ctest --rerun-failed --output-on-failure -C ${{ matrix.type }}
