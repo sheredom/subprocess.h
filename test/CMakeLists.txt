@@ -132,7 +132,7 @@ function(subprocess_set_cxx_flags FILE STANDARD)
       COMPILE_FLAGS "${SUBPROCESS_CXX_WARNINGS} ${STANDARD} ${EXTRA_FLAGS}")
   else()
     set_source_files_properties(${FILE} PROPERTIES
-      COMPILE_FLAGS "${SUBPROCESS_CXX_WARNINGS} ${EXTRA_FLAGS}")
+      COMPILE_FLAGS "${SUBPROCESS_CXX_WARNINGS}")
   endif()
 endfunction()
 
