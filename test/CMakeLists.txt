@@ -30,6 +30,12 @@ include(CTest)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../)
 
+# Strict -std=c99/-std=c11/-std=c++XX modes on glibc hide POSIX/GNU
+# declarations used by subprocess.h unless feature test macros are enabled.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  add_compile_definitions(_GNU_SOURCE)
+endif()
+
 set(SUBPROCESS_HELPER_SOURCES
   process_return_zero.c
   process_return_fortytwo.c
