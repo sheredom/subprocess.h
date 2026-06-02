@@ -44,6 +44,10 @@
 
 #include <errno.h>
 
+#if defined(_WIN32) && defined(__cplusplus)
+extern "C" {
+#endif
+
 #if defined(_MSC_VER)
 __declspec(dllimport) void __stdcall Sleep(unsigned long);
 __declspec(dllimport) int __stdcall SetEnvironmentVariableA(const char *,
@@ -56,6 +60,13 @@ __declspec(dllimport) unsigned long __stdcall GetLastError(void);
 __declspec(dllimport) int __stdcall GetProcessHandleCount(void *,
                                                            unsigned long *);
 __declspec(dllimport) void __stdcall SetLastError(unsigned long);
+#endif
+
+#if defined(_WIN32) && defined(__cplusplus)
+}
+#endif
+
+#if defined(_WIN32)
 #include <direct.h>
 #define subprocess_test_getcwd _getcwd
 #define subprocess_test_mkdir(path) _mkdir(path)
