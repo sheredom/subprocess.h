@@ -94,7 +94,7 @@ else()
 endif()
 
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
-  set(SUBPROCESS_CXX_WARNINGS "-Wall -Wextra -Werror -Wpedantic")
+  set(SUBPROCESS_CXX_WARNINGS "-Wall -Wextra -Werror -Wpedantic -Wno-variadic-macros")
   set(SUBPROCESS_CXX_USE_STD_FLAG TRUE)
 elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang" OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "AppleClang")
   if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")

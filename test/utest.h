@@ -399,9 +399,6 @@ UTEST_EXTERN struct utest_state_s utest_state;
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wvariadic-macros"
 #pragma clang diagnostic ignored "-Wc++98-compat-pedantic"
-#elif defined(__GNUC__) && defined(__cplusplus)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wvariadic-macros"
 #endif
 #define UTEST_PRINTF(...)                                                      \
   if (utest_state.output) {                                                    \
@@ -410,17 +407,12 @@ UTEST_EXTERN struct utest_state_s utest_state;
   printf(__VA_ARGS__)
 #ifdef __clang__
 #pragma clang diagnostic pop
-#elif defined(__GNUC__) && defined(__cplusplus)
-#pragma GCC diagnostic pop
 #endif
 
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wvariadic-macros"
 #pragma clang diagnostic ignored "-Wc++98-compat-pedantic"
-#elif defined(__GNUC__) && defined(__cplusplus)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wvariadic-macros"
 #endif
 
 #ifdef _MSC_VER
@@ -431,8 +423,6 @@ UTEST_EXTERN struct utest_state_s utest_state;
 
 #ifdef __clang__
 #pragma clang diagnostic pop
-#elif defined(__GNUC__) && defined(__cplusplus)
-#pragma GCC diagnostic pop
 #endif
 
 #if defined(__cplusplus)
