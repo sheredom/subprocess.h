@@ -266,6 +266,9 @@ subprocess_weak int subprocess_alive(struct subprocess_s *const process);
 #include <signal.h>
 #include <spawn.h>
 #include <stdlib.h>
+#if defined(__APPLE__)
+#include <AvailabilityMacros.h>
+#endif
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -274,6 +277,21 @@ subprocess_weak int subprocess_alive(struct subprocess_s *const process);
 #if defined(_WIN32)
 
 #include <wchar.h>
+
+#if defined(__clang__)
+#if __has_warning("-Wc++-keyword")
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wc++-keyword"
+#endif
+#endif
+
+typedef wchar_t subprocess_wchar_t;
+
+#if defined(__clang__)
+#if __has_warning("-Wc++-keyword")
+#pragma clang diagnostic pop
+#endif
+#endif
 
 #if (_MSC_VER < 1920)
 #ifdef _WIN64
@@ -311,6 +329,10 @@ typedef struct _OVERLAPPED *LPOVERLAPPED;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
 #endif
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wpadded"
+#endif
 
 struct subprocess_subprocess_information_s {
   void *hProcess;
@@ -327,9 +349,9 @@ struct subprocess_security_attributes_s {
 
 struct subprocess_startup_info_s {
   unsigned long cb;
-  wchar_t *lpReserved;
-  wchar_t *lpDesktop;
-  wchar_t *lpTitle;
+  subprocess_wchar_t *lpReserved;
+  subprocess_wchar_t *lpDesktop;
+  subprocess_wchar_t *lpTitle;
   unsigned long dwX;
   unsigned long dwY;
   unsigned long dwXSize;
@@ -360,6 +382,9 @@ struct subprocess_overlapped_s {
   void *hEvent;
 };
 
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 #ifdef __MINGW32__
 #pragma GCC diagnostic pop
 #endif
@@ -389,11 +414,11 @@ __declspec(dllimport) void *__stdcall CreateFileA(const char *, unsigned long,
 __declspec(dllimport) void *__stdcall CreateEventA(LPSECURITY_ATTRIBUTES, int,
                                                    int, const char *);
 __declspec(dllimport) int __stdcall CreateProcessW(
-    const wchar_t *, wchar_t *, LPSECURITY_ATTRIBUTES, LPSECURITY_ATTRIBUTES,
-    int, unsigned long, void *, const wchar_t *, LPSTARTUPINFOW,
-    LPPROCESS_INFORMATION);
+    const subprocess_wchar_t *, subprocess_wchar_t *, LPSECURITY_ATTRIBUTES,
+    LPSECURITY_ATTRIBUTES, int, unsigned long, void *,
+    const subprocess_wchar_t *, LPSTARTUPINFOW, LPPROCESS_INFORMATION);
 __declspec(dllimport) int __stdcall MultiByteToWideChar(
-    unsigned int, unsigned long, const char *, int, wchar_t *, int);
+    unsigned int, unsigned long, const char *, int, subprocess_wchar_t *, int);
 __declspec(dllimport) int __stdcall CloseHandle(void *);
 __declspec(dllimport) unsigned long __stdcall WaitForSingleObject(
     void *, unsigned long);
@@ -554,7 +579,18 @@ int subprocess_create_named_pipe_helper(void **rd, void **wr) {
   struct subprocess_security_attributes_s saAttr = {sizeof(saAttr),
                                                     SUBPROCESS_NULL, 1};
   char name[256] = {0};
+#if defined(__clang__)
+#if __has_warning("-Wunique-object-duplication")
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunique-object-duplication"
+#endif
+#endif
   static subprocess_tls long index = 0;
+#if defined(__clang__)
+#if __has_warning("-Wunique-object-duplication")
+#pragma clang diagnostic pop
+#endif
+#endif
   const long unique = index++;
 
   *rd = SUBPROCESS_NULL;
@@ -611,8 +647,8 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   void *rd = SUBPROCESS_NULL;
   void *wr = SUBPROCESS_NULL;
   char *commandLineCombined;
-  wchar_t *commandLineCombinedWide = SUBPROCESS_NULL;
-  wchar_t *process_cwd_wide = SUBPROCESS_NULL;
+  subprocess_wchar_t *commandLineCombinedWide = SUBPROCESS_NULL;
+  subprocess_wchar_t *process_cwd_wide = SUBPROCESS_NULL;
   subprocess_size_t len;
   int wide_len;
   int i, j;
@@ -631,8 +667,8 @@ int subprocess_create_ex(const char *const commandLine[], int options,
                                                             0};
   struct subprocess_security_attributes_s saAttr = {sizeof(saAttr),
                                                     SUBPROCESS_NULL, 1};
-  wchar_t empty_environment[2] = {0, 0};
-  wchar_t *used_environment = SUBPROCESS_NULL;
+  subprocess_wchar_t empty_environment[2] = {0, 0};
+  subprocess_wchar_t *used_environment = SUBPROCESS_NULL;
   struct subprocess_startup_info_s startInfo = {0,
                                                 SUBPROCESS_NULL,
                                                 SUBPROCESS_NULL,
@@ -694,13 +730,14 @@ int subprocess_create_ex(const char *const commandLine[], int options,
         len += SUBPROCESS_CAST(subprocess_size_t, wide_len);
       }
 
-      if (((SUBPROCESS_CAST(subprocess_size_t, -1)) / sizeof(wchar_t)) < len) {
+      if (((SUBPROCESS_CAST(subprocess_size_t, -1)) /
+           sizeof(subprocess_wchar_t)) < len) {
         result = subprocess_error_no_memory;
         goto cleanup;
       }
 
-      used_environment = SUBPROCESS_CAST(wchar_t *,
-                                         _alloca(len * sizeof(wchar_t)));
+      used_environment = SUBPROCESS_CAST(
+          subprocess_wchar_t *, _alloca(len * sizeof(subprocess_wchar_t)));
       if (!used_environment) {
         result = subprocess_error_no_memory;
         goto cleanup;
@@ -946,8 +983,10 @@ int subprocess_create_ex(const char *const commandLine[], int options,
     goto cleanup;
   }
 
-  commandLineCombinedWide = SUBPROCESS_CAST(wchar_t *,
-      _alloca(SUBPROCESS_CAST(subprocess_size_t, wide_len) * sizeof(wchar_t)));
+  commandLineCombinedWide = SUBPROCESS_CAST(
+      subprocess_wchar_t *,
+      _alloca(SUBPROCESS_CAST(subprocess_size_t, wide_len) *
+              sizeof(subprocess_wchar_t)));
   if (!commandLineCombinedWide) {
     result = subprocess_error_no_memory;
     goto cleanup;
@@ -975,8 +1014,9 @@ int subprocess_create_ex(const char *const commandLine[], int options,
     }
 
     process_cwd_wide = SUBPROCESS_CAST(
-        wchar_t *, _alloca(SUBPROCESS_CAST(subprocess_size_t, wide_len) *
-                           sizeof(wchar_t)));
+        subprocess_wchar_t *,
+        _alloca(SUBPROCESS_CAST(subprocess_size_t, wide_len) *
+                sizeof(subprocess_wchar_t)));
     if (!process_cwd_wide) {
       result = subprocess_error_no_memory;
       goto cleanup;
@@ -1165,7 +1205,18 @@ cleanup:
 
   // Set working directory
   if (process_cwd) {
+#if defined(__APPLE__) && MAC_OS_X_VERSION_MIN_REQUIRED >= 260000
+    posix_error = posix_spawn_file_actions_addchdir(&actions, process_cwd);
+#else
+#if defined(__APPLE__) && defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#endif
     posix_error = posix_spawn_file_actions_addchdir_np(&actions, process_cwd);
+#if defined(__APPLE__) && defined(__clang__)
+#pragma clang diagnostic pop
+#endif
+#endif
     if (0 != posix_error) {
       saved_errno = posix_error;
       result = subprocess_error_from_errno(posix_error);
