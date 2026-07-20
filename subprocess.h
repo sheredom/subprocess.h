@@ -266,6 +266,9 @@ subprocess_weak int subprocess_alive(struct subprocess_s *const process);
 #include <signal.h>
 #include <spawn.h>
 #include <stdlib.h>
+#if defined(__APPLE__)
+#include <AvailabilityMacros.h>
+#endif
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -1172,7 +1175,18 @@ cleanup:
 
   // Set working directory
   if (process_cwd) {
+#if defined(__APPLE__) && MAC_OS_X_VERSION_MIN_REQUIRED >= 260000
+    posix_error = posix_spawn_file_actions_addchdir(&actions, process_cwd);
+#else
+#if defined(__APPLE__) && defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#endif
     posix_error = posix_spawn_file_actions_addchdir_np(&actions, process_cwd);
+#if defined(__APPLE__) && defined(__clang__)
+#pragma clang diagnostic pop
+#endif
+#endif
     if (0 != posix_error) {
       saved_errno = posix_error;
       result = subprocess_error_from_errno(posix_error);
