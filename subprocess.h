@@ -579,7 +579,18 @@ int subprocess_create_named_pipe_helper(void **rd, void **wr) {
   struct subprocess_security_attributes_s saAttr = {sizeof(saAttr),
                                                     SUBPROCESS_NULL, 1};
   char name[256] = {0};
+#if defined(__clang__)
+#if __has_warning("-Wunique-object-duplication")
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunique-object-duplication"
+#endif
+#endif
   static subprocess_tls long index = 0;
+#if defined(__clang__)
+#if __has_warning("-Wunique-object-duplication")
+#pragma clang diagnostic pop
+#endif
+#endif
   const long unique = index++;
 
   *rd = SUBPROCESS_NULL;
