@@ -26,8 +26,15 @@
 #include <string.h>
 int main(int argc, const char *const argv[]) {
   unsigned int res = 0;
+  if (argc != 8) {
+    return 0;
+  }
   res |= ((strcmp(argv[1], "foo\nbar") == 0) << 0);
   res |= ((strcmp(argv[2], "\"baz\"") == 0) << 1);
   res |= ((strcmp(argv[3], "faz\\\"faz") == 0) << 2);
+  res |= ((strcmp(argv[4], "a b\\") == 0) << 3);
+  res |= ((strcmp(argv[5], "foo\\\\\"bar") == 0) << 4);
+  res |= ((strcmp(argv[6], "a b\\\\") == 0) << 5);
+  res |= ((strcmp(argv[7], "after") == 0) << 6);
   return (int)res;
 }

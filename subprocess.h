@@ -653,6 +653,7 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   int wide_len;
   int i, j;
   int need_quoting;
+  subprocess_size_t bs_run;
   unsigned long flags = 0;
   unsigned long last_error = 0;
   int result = subprocess_error_unknown;
@@ -906,25 +907,35 @@ int subprocess_create_ex(const char *const commandLine[], int options,
     len++;
 
     // Quote the argument if it has a space in it
-    if (strpbrk(commandLine[i], "\t\v ") != SUBPROCESS_NULL ||
-        commandLine[i][0] == SUBPROCESS_NULL)
+    need_quoting = strpbrk(commandLine[i], "\t\v ") != SUBPROCESS_NULL ||
+                   commandLine[i][0] == SUBPROCESS_NULL;
+    if (need_quoting)
       len += 2;
 
-    for (j = 0; '\0' != commandLine[i][j]; j++) {
-      switch (commandLine[i][j]) {
-      default:
-        break;
-      case '\\':
-        if (commandLine[i][j + 1] == '"') {
+    for (j = 0; '\0' != commandLine[i][j];) {
+      if ('\\' == commandLine[i][j]) {
+        bs_run = 0;
+        while ('\\' == commandLine[i][j]) {
+          bs_run++;
+          j++;
+        }
+        if ('"' == commandLine[i][j]) {
+          // the whole run is doubled before an escaped quote
+          len += (bs_run * 2) + 2;
+          j++;
+        } else if ('\0' == commandLine[i][j] && need_quoting) {
+          // the whole run is doubled before the closing quote
+          len += bs_run * 2;
+        } else {
+          len += bs_run;
+        }
+      } else {
+        if ('"' == commandLine[i][j]) {
           len++;
         }
-
-        break;
-      case '"':
         len++;
-        break;
+        j++;
       }
-      len++;
     }
   }
 
@@ -949,22 +960,40 @@ int subprocess_create_ex(const char *const commandLine[], int options,
       commandLineCombined[len++] = '"';
     }
 
-    for (j = 0; '\0' != commandLine[i][j]; j++) {
-      switch (commandLine[i][j]) {
-      default:
-        break;
-      case '\\':
-        if (commandLine[i][j + 1] == '"') {
+    for (j = 0; '\0' != commandLine[i][j];) {
+      if ('\\' == commandLine[i][j]) {
+        bs_run = 0;
+        while ('\\' == commandLine[i][j]) {
+          bs_run++;
+          j++;
+        }
+        if ('"' == commandLine[i][j]) {
+          // the whole run is doubled before an escaped quote
+          for (; bs_run > 0; bs_run--) {
+            commandLineCombined[len++] = '\\';
+            commandLineCombined[len++] = '\\';
+          }
+          commandLineCombined[len++] = '\\';
+          commandLineCombined[len++] = '"';
+          j++;
+        } else if ('\0' == commandLine[i][j] && need_quoting) {
+          // the whole run is doubled before the closing quote
+          for (; bs_run > 0; bs_run--) {
+            commandLineCombined[len++] = '\\';
+            commandLineCombined[len++] = '\\';
+          }
+        } else {
+          for (; bs_run > 0; bs_run--) {
+            commandLineCombined[len++] = '\\';
+          }
+        }
+      } else {
+        if ('"' == commandLine[i][j]) {
           commandLineCombined[len++] = '\\';
         }
-
-        break;
-      case '"':
-        commandLineCombined[len++] = '\\';
-        break;
+        commandLineCombined[len++] = commandLine[i][j];
+        j++;
       }
-
-      commandLineCombined[len++] = commandLine[i][j];
     }
     if (need_quoting) {
       commandLineCombined[len++] = '"';
