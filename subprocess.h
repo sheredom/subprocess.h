@@ -274,6 +274,18 @@ subprocess_weak int subprocess_alive(struct subprocess_s *const process);
 #include <unistd.h>
 #endif
 
+/* Whether subprocess_create_ex can honour process_cwd. glibc only gained
+   posix_spawn_file_actions_addchdir_np in 2.29. */
+#if defined(__GLIBC__)
+#if __GLIBC_PREREQ(2, 29)
+#define SUBPROCESS_HAVE_CWD 1
+#else
+#define SUBPROCESS_HAVE_CWD 0
+#endif
+#else
+#define SUBPROCESS_HAVE_CWD 1
+#endif
+
 #if defined(_WIN32)
 
 #include <wchar.h>
@@ -1207,6 +1219,8 @@ cleanup:
   if (process_cwd) {
 #if defined(__APPLE__) && MAC_OS_X_VERSION_MIN_REQUIRED >= 260000
     posix_error = posix_spawn_file_actions_addchdir(&actions, process_cwd);
+#elif !SUBPROCESS_HAVE_CWD
+    posix_error = ENOSYS;
 #else
 #if defined(__APPLE__) && defined(__clang__)
 #pragma clang diagnostic push
