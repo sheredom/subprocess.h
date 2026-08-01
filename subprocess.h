@@ -275,7 +275,9 @@ subprocess_weak int subprocess_alive(struct subprocess_s *const process);
 #endif
 
 /* Whether subprocess_create_ex can honour process_cwd. glibc only gained
-   posix_spawn_file_actions_addchdir_np in 2.29. */
+   posix_spawn_file_actions_addchdir_np in 2.29. Define this yourself to
+   override the detection, for instance on musl older than 1.1.24. */
+#if !defined(SUBPROCESS_HAVE_CWD)
 #if defined(__GLIBC__)
 #if __GLIBC_PREREQ(2, 29)
 #define SUBPROCESS_HAVE_CWD 1
@@ -284,6 +286,7 @@ subprocess_weak int subprocess_alive(struct subprocess_s *const process);
 #endif
 #else
 #define SUBPROCESS_HAVE_CWD 1
+#endif
 #endif
 
 #if defined(_WIN32)
