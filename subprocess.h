@@ -1125,15 +1125,19 @@ cleanup:
   int stderrfd[2] = {-1, -1};
   int fd, fd_flags;
   int async_no_wait;
-  int actions_created = 0;
   int result = subprocess_error_unknown;
   int saved_errno = 0;
-  int posix_error;
   pid_t child = 0;
   extern char **environ;
   char *const empty_environment[1] = {SUBPROCESS_NULL};
-  posix_spawn_file_actions_t actions;
   char *const *used_environment;
+#if defined(_AIX)
+  int aix_exec_errfd[2] = {-1, -1}; /* close-on-exec error channel */
+#else
+  int actions_created = 0;
+  int posix_error;
+  posix_spawn_file_actions_t actions;
+#endif
 
   async_no_wait = subprocess_option_enable_async_no_wait ==
                   (options & subprocess_option_enable_async_no_wait);
@@ -1192,147 +1196,271 @@ cleanup:
     used_environment = empty_environment;
   }
 
-  posix_error = posix_spawn_file_actions_init(&actions);
-  if (0 != posix_error) {
-    saved_errno = posix_error;
-    result = subprocess_error_from_errno(posix_error);
-    if (subprocess_error_unknown == result) {
-      result = subprocess_error_spawn;
-    }
+#if defined(_AIX)
+  /* AIX does not provide posix_spawn_file_actions_addchdir_np.
+   * Use fork()+exec() so we can chdir() in the child before exec.
+   * A close-on-exec pipe relays exec() errno back to the parent:
+   * if exec succeeds the write end is closed automatically (FD_CLOEXEC) and
+   * the parent reads EOF; if exec fails the child writes errno before _exit. */
+  if (0 != pipe(aix_exec_errfd)) {
+    saved_errno = errno;
+    result = subprocess_error_pipe;
     goto cleanup;
   }
-  actions_created = 1;
+  if (-1 == fcntl(aix_exec_errfd[1], F_SETFD, FD_CLOEXEC)) {
+    saved_errno = errno;
+    result = subprocess_error_spawn;
+    goto cleanup;
+  }
 
-  // Set working directory
-  if (process_cwd) {
+  child = fork();
+  if (child < 0) {
+    saved_errno = errno;
+    result = subprocess_error_spawn;
+    goto cleanup;
+  }
+  if (0 == child) {
+    /* ---- child ---- */
+    close(aix_exec_errfd[0]); /* child never reads */
+
+    /* Redirect stdin */
+    if (-1 == dup2(stdinfd[0], STDIN_FILENO)) {
+      int e = errno;
+      (void)write(aix_exec_errfd[1], &e, sizeof(e));
+      _exit(127);
+    }
+    close(stdinfd[0]);
+    close(stdinfd[1]);
+
+    /* Redirect stdout */
+    if (-1 == dup2(stdoutfd[1], STDOUT_FILENO)) {
+      int e = errno;
+      (void)write(aix_exec_errfd[1], &e, sizeof(e));
+      _exit(127);
+    }
+    close(stdoutfd[0]);
+    close(stdoutfd[1]);
+
+    /* Redirect stderr */
+    if (subprocess_option_combined_stdout_stderr ==
+        (options & subprocess_option_combined_stdout_stderr)) {
+      if (-1 == dup2(STDOUT_FILENO, STDERR_FILENO)) {
+        int e = errno;
+        (void)write(aix_exec_errfd[1], &e, sizeof(e));
+        _exit(127);
+      }
+    } else {
+      if (-1 == dup2(stderrfd[1], STDERR_FILENO)) {
+        int e = errno;
+        (void)write(aix_exec_errfd[1], &e, sizeof(e));
+        _exit(127);
+      }
+      close(stderrfd[0]);
+      close(stderrfd[1]);
+    }
+
+    /* Change working directory if requested */
+    if (process_cwd) {
+      if (0 != chdir(process_cwd)) {
+        int e = errno;
+        (void)write(aix_exec_errfd[1], &e, sizeof(e));
+        _exit(127);
+      }
+    }
+
+    /* execvpe is in AIX libc but not declared in any header */
+    if (subprocess_option_search_user_path ==
+        (options & subprocess_option_search_user_path)) {
+      extern int execvpe(const char *, char *const *, char *const *);
+      execvpe(commandLine[0],
+              SUBPROCESS_CONST_CAST(char *const *, commandLine),
+              SUBPROCESS_CONST_CAST(char *const *, used_environment));
+    } else {
+      execve(commandLine[0],
+             SUBPROCESS_CONST_CAST(char *const *, commandLine),
+             SUBPROCESS_CONST_CAST(char *const *, used_environment));
+    }
+
+    /* exec failed - send errno to parent */
+    {
+      int e = errno;
+      (void)write(aix_exec_errfd[1], &e, sizeof(e));
+    }
+    _exit(127);
+  }
+  /* ---- parent ---- */
+  /* close write end; read from read end: EOF = exec OK, data = exec errno */
+  close(aix_exec_errfd[1]);
+  aix_exec_errfd[1] = -1;
+  {
+    int exec_err = 0;
+    ssize_t n = read(aix_exec_errfd[0], &exec_err, sizeof(exec_err));
+    close(aix_exec_errfd[0]);
+    aix_exec_errfd[0] = -1;
+    if (n > 0) {
+      /* exec failed in child: reap zombie, surface the error */
+      waitpid(child, SUBPROCESS_NULL, 0);
+      child = 0;
+      saved_errno = exec_err;
+      result = subprocess_error_from_errno(exec_err);
+      if (subprocess_error_unknown == result) {
+        result = subprocess_error_spawn;
+      }
+      goto cleanup;
+    }
+  }
+#else
+  {
+    int posix_error;
+    posix_spawn_file_actions_t actions;
+
+    posix_error = posix_spawn_file_actions_init(&actions);
+    if (0 != posix_error) {
+      saved_errno = posix_error;
+      result = subprocess_error_from_errno(posix_error);
+      if (subprocess_error_unknown == result) {
+        result = subprocess_error_spawn;
+      }
+      goto cleanup;
+    }
+
+    // Set working directory
+    if (process_cwd) {
 #if defined(__APPLE__) && MAC_OS_X_VERSION_MIN_REQUIRED >= 260000
-    posix_error = posix_spawn_file_actions_addchdir(&actions, process_cwd);
+      posix_error = posix_spawn_file_actions_addchdir(&actions, process_cwd);
 #else
 #if defined(__APPLE__) && defined(__clang__)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #endif
-    posix_error = posix_spawn_file_actions_addchdir_np(&actions, process_cwd);
+      posix_error = posix_spawn_file_actions_addchdir_np(&actions, process_cwd);
 #if defined(__APPLE__) && defined(__clang__)
 #pragma clang diagnostic pop
 #endif
 #endif
+      if (0 != posix_error) {
+        saved_errno = posix_error;
+        result = subprocess_error_from_errno(posix_error);
+        if (subprocess_error_unknown == result) {
+          result = subprocess_error_spawn;
+        }
+        posix_spawn_file_actions_destroy(&actions);
+        goto cleanup;
+      }
+    }
+
+    // Close the stdin write end
+    posix_error = posix_spawn_file_actions_addclose(&actions, stdinfd[1]);
     if (0 != posix_error) {
       saved_errno = posix_error;
       result = subprocess_error_from_errno(posix_error);
       if (subprocess_error_unknown == result) {
         result = subprocess_error_spawn;
       }
+      posix_spawn_file_actions_destroy(&actions);
       goto cleanup;
     }
-  }
 
-  // Close the stdin write end
-  posix_error = posix_spawn_file_actions_addclose(&actions, stdinfd[1]);
-  if (0 != posix_error) {
-    saved_errno = posix_error;
-    result = subprocess_error_from_errno(posix_error);
-    if (subprocess_error_unknown == result) {
-      result = subprocess_error_spawn;
-    }
-    goto cleanup;
-  }
-
-  // Map the read end to stdin
-  posix_error =
-      posix_spawn_file_actions_adddup2(&actions, stdinfd[0], STDIN_FILENO);
-  if (0 != posix_error) {
-    saved_errno = posix_error;
-    result = subprocess_error_from_errno(posix_error);
-    if (subprocess_error_unknown == result) {
-      result = subprocess_error_spawn;
-    }
-    goto cleanup;
-  }
-
-  // Close the stdout read end
-  posix_error = posix_spawn_file_actions_addclose(&actions, stdoutfd[0]);
-  if (0 != posix_error) {
-    saved_errno = posix_error;
-    result = subprocess_error_from_errno(posix_error);
-    if (subprocess_error_unknown == result) {
-      result = subprocess_error_spawn;
-    }
-    goto cleanup;
-  }
-
-  // Map the write end to stdout
-  posix_error =
-      posix_spawn_file_actions_adddup2(&actions, stdoutfd[1], STDOUT_FILENO);
-  if (0 != posix_error) {
-    saved_errno = posix_error;
-    result = subprocess_error_from_errno(posix_error);
-    if (subprocess_error_unknown == result) {
-      result = subprocess_error_spawn;
-    }
-    goto cleanup;
-  }
-
-  if (subprocess_option_combined_stdout_stderr ==
-      (options & subprocess_option_combined_stdout_stderr)) {
-    posix_error = posix_spawn_file_actions_adddup2(&actions, STDOUT_FILENO,
-                                                   STDERR_FILENO);
+    // Map the read end to stdin
+    posix_error =
+        posix_spawn_file_actions_adddup2(&actions, stdinfd[0], STDIN_FILENO);
     if (0 != posix_error) {
       saved_errno = posix_error;
       result = subprocess_error_from_errno(posix_error);
       if (subprocess_error_unknown == result) {
         result = subprocess_error_spawn;
       }
+      posix_spawn_file_actions_destroy(&actions);
       goto cleanup;
     }
-  } else {
-    // Close the stderr read end
-    posix_error = posix_spawn_file_actions_addclose(&actions, stderrfd[0]);
+
+    // Close the stdout read end
+    posix_error = posix_spawn_file_actions_addclose(&actions, stdoutfd[0]);
     if (0 != posix_error) {
       saved_errno = posix_error;
       result = subprocess_error_from_errno(posix_error);
       if (subprocess_error_unknown == result) {
         result = subprocess_error_spawn;
       }
+      posix_spawn_file_actions_destroy(&actions);
       goto cleanup;
     }
+
     // Map the write end to stdout
-    posix_error = posix_spawn_file_actions_adddup2(&actions, stderrfd[1],
-                                                   STDERR_FILENO);
+    posix_error =
+        posix_spawn_file_actions_adddup2(&actions, stdoutfd[1], STDOUT_FILENO);
     if (0 != posix_error) {
       saved_errno = posix_error;
       result = subprocess_error_from_errno(posix_error);
       if (subprocess_error_unknown == result) {
         result = subprocess_error_spawn;
       }
+      posix_spawn_file_actions_destroy(&actions);
       goto cleanup;
     }
-  }
+
+    if (subprocess_option_combined_stdout_stderr ==
+        (options & subprocess_option_combined_stdout_stderr)) {
+      posix_error = posix_spawn_file_actions_adddup2(&actions, STDOUT_FILENO,
+                                                     STDERR_FILENO);
+      if (0 != posix_error) {
+        saved_errno = posix_error;
+        result = subprocess_error_from_errno(posix_error);
+        if (subprocess_error_unknown == result) {
+          result = subprocess_error_spawn;
+        }
+        posix_spawn_file_actions_destroy(&actions);
+        goto cleanup;
+      }
+    } else {
+      // Close the stderr read end
+      posix_error = posix_spawn_file_actions_addclose(&actions, stderrfd[0]);
+      if (0 != posix_error) {
+        saved_errno = posix_error;
+        result = subprocess_error_from_errno(posix_error);
+        if (subprocess_error_unknown == result) {
+          result = subprocess_error_spawn;
+        }
+        posix_spawn_file_actions_destroy(&actions);
+        goto cleanup;
+      }
+      // Map the write end to stderr
+      posix_error = posix_spawn_file_actions_adddup2(&actions, stderrfd[1],
+                                                     STDERR_FILENO);
+      if (0 != posix_error) {
+        saved_errno = posix_error;
+        result = subprocess_error_from_errno(posix_error);
+        if (subprocess_error_unknown == result) {
+          result = subprocess_error_spawn;
+        }
+        posix_spawn_file_actions_destroy(&actions);
+        goto cleanup;
+      }
+    }
 
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wcast-qual"
 #pragma clang diagnostic ignored "-Wold-style-cast"
 #endif
-  if (subprocess_option_search_user_path ==
-      (options & subprocess_option_search_user_path)) {
-    posix_error = posix_spawnp(&child, commandLine[0], &actions,
-                               SUBPROCESS_NULL,
-                               SUBPROCESS_CONST_CAST(char *const *, commandLine),
-                               used_environment);
-    if (0 != posix_error) {
-      saved_errno = posix_error;
-      result = subprocess_error_from_errno(posix_error);
-      if (subprocess_error_unknown == result) {
-        result = subprocess_error_spawn;
-      }
-      goto cleanup;
+    if (subprocess_option_search_user_path ==
+        (options & subprocess_option_search_user_path)) {
+      posix_error = posix_spawnp(&child, commandLine[0], &actions,
+                                 SUBPROCESS_NULL,
+                                 SUBPROCESS_CONST_CAST(char *const *, commandLine),
+                                 used_environment);
+    } else {
+      posix_error = posix_spawn(&child, commandLine[0], &actions,
+                                SUBPROCESS_NULL,
+                                SUBPROCESS_CONST_CAST(char *const *, commandLine),
+                                used_environment);
     }
-  } else {
-    posix_error = posix_spawn(&child, commandLine[0], &actions,
-                              SUBPROCESS_NULL,
-                              SUBPROCESS_CONST_CAST(char *const *, commandLine),
-                              used_environment);
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
+
+    posix_spawn_file_actions_destroy(&actions);
+
     if (0 != posix_error) {
       saved_errno = posix_error;
       result = subprocess_error_from_errno(posix_error);
@@ -1342,9 +1470,7 @@ cleanup:
       goto cleanup;
     }
   }
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
+#endif /* !_AIX */
 
   // Close the stdin read end
   close(stdinfd[0]);
@@ -1419,10 +1545,6 @@ cleanup:
     result = subprocess_error_from_errno(saved_errno);
   }
 
-  if (actions_created) {
-    posix_spawn_file_actions_destroy(&actions);
-  }
-
   if (0 != result) {
     if (child) {
       kill(child, 9);
@@ -1463,6 +1585,14 @@ cleanup:
   if (-1 != stderrfd[1]) {
     close(stderrfd[1]);
   }
+#if defined(_AIX)
+  if (-1 != aix_exec_errfd[0]) {
+    close(aix_exec_errfd[0]);
+  }
+  if (-1 != aix_exec_errfd[1]) {
+    close(aix_exec_errfd[1]);
+  }
+#endif
 
   if ((0 != result) && (0 != saved_errno)) {
     errno = saved_errno;
