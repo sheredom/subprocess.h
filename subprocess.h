@@ -275,8 +275,10 @@ subprocess_weak int subprocess_alive(struct subprocess_s *const process);
 #endif
 
 /* Whether subprocess_create_ex can honour process_cwd. glibc only gained
-   posix_spawn_file_actions_addchdir_np in 2.29. Define this yourself to
-   override the detection, for instance on musl older than 1.1.24. */
+   posix_spawn_file_actions_addchdir_np in 2.29, and macOS in 10.15; the SDKs
+   mark it unavailable on iOS, tvOS and watchOS, where the undefined version
+   macro folds to 0 and so answers correctly. Define this yourself to override
+   the detection, for instance on musl older than 1.1.24. */
 #if !defined(SUBPROCESS_HAVE_CWD)
 #if defined(__GLIBC__)
 #if __GLIBC_PREREQ(2, 29)
@@ -284,6 +286,8 @@ subprocess_weak int subprocess_alive(struct subprocess_s *const process);
 #else
 #define SUBPROCESS_HAVE_CWD 0
 #endif
+#elif defined(__APPLE__) && MAC_OS_X_VERSION_MIN_REQUIRED < 101500
+#define SUBPROCESS_HAVE_CWD 0
 #else
 #define SUBPROCESS_HAVE_CWD 1
 #endif
