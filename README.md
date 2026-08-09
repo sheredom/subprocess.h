@@ -44,9 +44,9 @@ are interpreted as UTF-8 and passed to the Unicode process creation APIs.
 If the process is created successfully then 0 is returned from
 `subprocess_create`. If process creation fails, a non-zero
 `subprocess_error_e` value is returned (for example,
-`subprocess_error_not_found` or `subprocess_error_permission_denied`). On POSIX
-platforms, inspect `errno` for the platform-specific failure reason; on Windows,
-inspect `GetLastError()`.
+`subprocess_error_not_found`, `subprocess_error_permission_denied`, or
+`subprocess_error_not_supported`). On POSIX platforms, inspect `errno` for the
+platform-specific failure reason; on Windows, inspect `GetLastError()`.
 
 ### Writing to the Standard Input of a Process
 
@@ -181,8 +181,9 @@ interpreted as UTF-8.
 
 Not every platform can honour a custom working directory. Where it cannot,
 `SUBPROCESS_HAVE_CWD` is defined to `0` and passing a non-`NULL` working
-directory fails with `ENOSYS`; this currently affects glibc older than 2.29,
-macOS older than 10.15, and iOS, tvOS and watchOS, where Apple marks the
+directory returns `subprocess_error_not_supported` with `errno` set to
+`ENOSYS`; this currently affects glibc older than 2.29, macOS older than 10.15,
+and iOS, tvOS and watchOS, where Apple marks the
 underlying call unavailable. Define `SUBPROCESS_HAVE_CWD` yourself to override
 the detection, for instance on musl older than 1.1.24.
 
