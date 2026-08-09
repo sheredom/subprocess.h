@@ -107,7 +107,8 @@ enum subprocess_error_e {
   subprocess_error_permission_denied = -5,
   subprocess_error_no_memory = -6,
   subprocess_error_pipe = -7,
-  subprocess_error_spawn = -8
+  subprocess_error_spawn = -8,
+  subprocess_error_not_supported = -9
 };
 
 #if defined(__cplusplus)
@@ -572,6 +573,8 @@ int subprocess_error_from_errno(int error) {
   case ENFILE:
   case ENOMEM:
     return subprocess_error_no_memory;
+  case ENOSYS:
+    return subprocess_error_not_supported;
   default:
     return subprocess_error_unknown;
   }

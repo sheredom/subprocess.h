@@ -141,6 +141,13 @@ SUBPROCESS_TEST(create_ex, subprocess_create_failure_preserves_error) {
 #endif
 }
 
+#if !defined(_WIN32)
+SUBPROCESS_TEST(create_ex, subprocess_enosys_is_not_supported) {
+  ASSERT_EQ(subprocess_error_not_supported,
+            subprocess_error_from_errno(ENOSYS));
+}
+#endif
+
 SUBPROCESS_TEST(create_ex, subprocess_create_failure_does_not_leak_resources) {
   const char *const commandLine[] = {
       "./subprocess_this_command_should_not_exist", 0};
@@ -1165,6 +1172,17 @@ SUBPROCESS_TEST(create_ex, subprocess_cwd) {
   ASSERT_EQ(0, ret);
 
   ASSERT_EQ(0, subprocess_destroy(&process));
+}
+#else
+SUBPROCESS_TEST(create_ex, subprocess_cwd_not_supported) {
+  const char *const commandLine[] = {"./process_return_zero", 0};
+  struct subprocess_s process;
+
+  errno = 0;
+  ASSERT_EQ(subprocess_error_not_supported,
+            subprocess_create_ex(commandLine, 0, SUBPROCESS_NULL, ".",
+                                 &process));
+  ASSERT_EQ(ENOSYS, errno);
 }
 #endif
 
