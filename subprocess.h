@@ -1224,7 +1224,7 @@ cleanup:
 
   // Set working directory
   if (process_cwd) {
-#if defined(__APPLE__) && MAC_OS_X_VERSION_MIN_REQUIRED >= 260000
+#if defined(__NetBSD__) || (defined(__APPLE__) && MAC_OS_X_VERSION_MIN_REQUIRED >= 260000)
     posix_error = posix_spawn_file_actions_addchdir(&actions, process_cwd);
 #elif !SUBPROCESS_HAVE_CWD
     posix_error = ENOSYS;
