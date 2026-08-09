@@ -411,14 +411,23 @@ SUBPROCESS_TEST(create, subprocess_stderr_argv) {
 
 SUBPROCESS_TEST(create, subprocess_return_special_argv) {
   const char *const commandLine[] = {"./process_return_special_argv",
-                                     "foo\nbar", "\"baz\"", "faz\\\"faz", 0};
+                                     "foo\nbar",
+                                     "\"baz\"",
+                                     "faz\\\"faz",
+                                     "a b\\",
+                                     "foo\\\\\"bar",
+                                     "a b\\\\",
+                                     "a \\\\\"b",
+                                     "a \\\\\\b\\\"",
+                                     "after",
+                                     0};
   struct subprocess_s process;
   int ret = -1;
 
   ASSERT_EQ(0, subprocess_create(commandLine, 0, &process));
   ASSERT_EQ(0, subprocess_join(&process, &ret));
 
-  ASSERT_EQ(7, ret); // 0b111
+  ASSERT_EQ(255, ret); // 0b11111111
 
   ASSERT_EQ(0, subprocess_destroy(&process));
 }
