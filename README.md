@@ -181,9 +181,10 @@ interpreted as UTF-8.
 
 Not every platform can honour a custom working directory. Where it cannot,
 `SUBPROCESS_HAVE_CWD` is defined to `0` and passing a non-`NULL` working
-directory fails with `ENOSYS`; this currently affects glibc older than 2.29.
-Define `SUBPROCESS_HAVE_CWD` yourself to override the detection, for instance
-on musl older than 1.1.24.
+directory fails with `ENOSYS`; this currently affects glibc older than 2.29,
+macOS older than 10.15, and iOS, tvOS and watchOS, where Apple marks the
+underlying call unavailable. Define `SUBPROCESS_HAVE_CWD` yourself to override
+the detection, for instance on musl older than 1.1.24.
 
 Note though that you **cannot** specify `subprocess_option_inherit_environment`
 with a custom environment. If you want to merge some custom environment with the
