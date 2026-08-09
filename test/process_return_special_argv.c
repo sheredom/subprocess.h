@@ -26,7 +26,10 @@
 #include <string.h>
 int main(int argc, const char *const argv[]) {
   unsigned int res = 0;
-  if (argc != 9) {
+  if (argc != 10) {
+    return 0;
+  }
+  if (strcmp(argv[9], "after") != 0) {
     return 0;
   }
   res |= ((strcmp(argv[1], "foo\nbar") == 0) << 0);
@@ -36,6 +39,6 @@ int main(int argc, const char *const argv[]) {
   res |= ((strcmp(argv[5], "foo\\\\\"bar") == 0) << 4);
   res |= ((strcmp(argv[6], "a b\\\\") == 0) << 5);
   res |= ((strcmp(argv[7], "a \\\\\"b") == 0) << 6);
-  res |= ((strcmp(argv[8], "after") == 0) << 7);
+  res |= ((strcmp(argv[8], "a \\\\\\b\\\"") == 0) << 7);
   return (int)res;
 }

@@ -418,6 +418,7 @@ SUBPROCESS_TEST(create, subprocess_return_special_argv) {
                                      "foo\\\\\"bar",
                                      "a b\\\\",
                                      "a \\\\\"b",
+                                     "a \\\\\\b\\\"",
                                      "after",
                                      0};
   struct subprocess_s process;
