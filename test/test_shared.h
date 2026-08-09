@@ -1116,6 +1116,7 @@ SUBPROCESS_TEST(environment, specify_environment) {
   ASSERT_EQ(0, subprocess_destroy(&process));
 }
 
+#if SUBPROCESS_HAVE_CWD
 SUBPROCESS_TEST(create_ex, subprocess_cwd) {
   char current_path[4096];
   char target_path[4096];
@@ -1156,6 +1157,7 @@ SUBPROCESS_TEST(create_ex, subprocess_cwd) {
 
   ASSERT_EQ(0, subprocess_destroy(&process));
 }
+#endif
 
 #if !defined(_MSC_VER)
 SUBPROCESS_TEST(executable_resolve, no_slashes_with_environment) {
