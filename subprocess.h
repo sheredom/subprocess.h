@@ -293,6 +293,20 @@ subprocess_weak int subprocess_alive(struct subprocess_s *const process);
 #endif
 #endif
 
+/* Whether posix_spawn reports a failed exec back to the caller. glibc only
+   started doing so in 2.24; before that the child silently exits with 127. */
+#if !defined(SUBPROCESS_SPAWN_REPORTS_EXEC_ERRORS)
+#if defined(__GLIBC__)
+#if __GLIBC_PREREQ(2, 24)
+#define SUBPROCESS_SPAWN_REPORTS_EXEC_ERRORS 1
+#else
+#define SUBPROCESS_SPAWN_REPORTS_EXEC_ERRORS 0
+#endif
+#else
+#define SUBPROCESS_SPAWN_REPORTS_EXEC_ERRORS 1
+#endif
+#endif
+
 #if defined(_WIN32)
 
 #include <wchar.h>
@@ -1350,6 +1364,17 @@ cleanup:
       goto cleanup;
     }
   } else {
+#if !SUBPROCESS_SPAWN_REPORTS_EXEC_ERRORS
+    /* posix_spawn cannot tell us the exec failed, so check up front */
+    if (0 != access(commandLine[0], X_OK)) {
+      saved_errno = errno;
+      result = subprocess_error_from_errno(saved_errno);
+      if (subprocess_error_unknown == result) {
+        result = subprocess_error_spawn;
+      }
+      goto cleanup;
+    }
+#endif
     posix_error = posix_spawn(&child, commandLine[0], &actions,
                               SUBPROCESS_NULL,
                               SUBPROCESS_CONST_CAST(char *const *, commandLine),
