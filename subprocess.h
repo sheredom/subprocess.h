@@ -275,14 +275,39 @@ subprocess_weak int subprocess_alive(struct subprocess_s *const process);
 #include <unistd.h>
 #endif
 
+/* __NetBSD_Version__ lives in <sys/param.h>, not in the compiler's predefines,
+   and the probes below need it. Including it early keeps them honest; without
+   it the version folds to 0 and every NetBSD would take the fork path, which
+   works but is heavier than necessary on the releases that do not need it. */
+#if defined(__NetBSD__)
+#include <sys/param.h>
+#endif
+
+/* Which spelling of the chdir file action the platform provides, if any.
+   POSIX 2024 standardised posix_spawn_file_actions_addchdir; implementations
+   that shipped it earlier called it ..._np. macOS 26 and NetBSD 10 use the
+   standard name, glibc 2.29+, macOS 10.15+ and FreeBSD 13.1+ use the _np name,
+   and AIX, NetBSD 9 and older, and OpenBSD provide neither. */
+#if !defined(SUBPROCESS_ADDCHDIR_IS_POSIX)
+#if (defined(__APPLE__) && MAC_OS_X_VERSION_MIN_REQUIRED >= 260000) ||        \
+    (defined(__NetBSD__) && __NetBSD_Version__ >= 1000000000)
+#define SUBPROCESS_ADDCHDIR_IS_POSIX 1
+#else
+#define SUBPROCESS_ADDCHDIR_IS_POSIX 0
+#endif
+#endif
+
 /* Whether to launch the child with fork()+exec() instead of posix_spawn().
-   AIX provides no posix_spawn_file_actions_addchdir[_np] at all, so process_cwd
-   cannot be honoured through posix_spawn there. Forking lets the child chdir()
-   before exec, and a close-on-exec pipe carries any exec() errno back to the
-   parent, so both capabilities below become available on such platforms.
+   Some platforms provide no posix_spawn_file_actions_addchdir under either
+   spelling, so process_cwd cannot be honoured through posix_spawn at all:
+   AIX has never had it, OpenBSD does not have it as of 7.9, and NetBSD gained
+   it only in 10.0. Forking lets the child chdir() before exec, and a
+   close-on-exec pipe carries any exec() errno back to the parent, so both
+   capabilities below become available on such platforms.
    Define this yourself to force either implementation. */
 #if !defined(SUBPROCESS_SPAWN_VIA_FORK)
-#if defined(_AIX)
+#if defined(_AIX) || defined(__OpenBSD__) ||                                  \
+    (defined(__NetBSD__) && (__NetBSD_Version__ < 1000000000))
 #define SUBPROCESS_SPAWN_VIA_FORK 1
 #else
 #define SUBPROCESS_SPAWN_VIA_FORK 0
@@ -1416,7 +1441,7 @@ cleanup:
 
   // Set working directory
   if (process_cwd) {
-#if defined(__NetBSD__) || (defined(__APPLE__) && MAC_OS_X_VERSION_MIN_REQUIRED >= 260000)
+#if SUBPROCESS_ADDCHDIR_IS_POSIX
     posix_error = posix_spawn_file_actions_addchdir(&actions, process_cwd);
 #elif !SUBPROCESS_HAVE_CWD
     posix_error = ENOSYS;
