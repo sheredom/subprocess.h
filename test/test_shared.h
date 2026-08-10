@@ -602,8 +602,17 @@ SUBPROCESS_TEST(create, subprocess_fail_divzero) {
   ASSERT_EQ(0, subprocess_join(&process, &ret));
   ASSERT_EQ(0, subprocess_destroy(&process));
 
-  // On AArch64 systems divide by zero does not cause a failure.
-#if !((defined(__arm64__) && defined(__APPLE__)) || defined(__aarch64__))
+  // Not every architecture traps on integer division by zero, and the ones that
+  // do not are specified to return a value instead:
+  //   AArch64  SDIV yields 0
+  //   PowerPC  divw/divd leave the result undefined, no exception unless OE
+  //   RISC-V   DIV yields -1, i.e. all bits set
+  // Measured with the same source and compiler on each: x86_64, armv7l and s390x
+  // die on SIGFPE, while aarch64 exits 0 printing 0, ppc64le exits 0, and riscv64
+  // exits 0 printing -1. Reproduced on AIX 7.2/POWER8 too. _ARCH_PPC is listed
+  // beside __powerpc__ because IBM XL C and OpenXL define only the former.
+#if !((defined(__arm64__) && defined(__APPLE__)) || defined(__aarch64__) ||    \
+      defined(__powerpc__) || defined(_ARCH_PPC) || defined(__riscv))
   ASSERT_NE(ret, 0);
 #endif
 }
