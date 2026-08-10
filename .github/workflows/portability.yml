@@ -16,6 +16,10 @@ jobs:
   # ordinary runner only ever selects one combination and the others are never
   # executed. Forcing them costs nothing and exercises the paths that platforms
   # without a posix_spawn chdir file action take.
+  #
+  # SUBPROCESS_SPAWN_VIA_FORK does not exist yet; that combination is a no-op
+  # until #112 lands, at which point this job starts exercising the fork
+  # implementation on an ordinary runner.
   capability-paths:
     runs-on: ubuntu-latest
     strategy:
@@ -81,12 +85,20 @@ jobs:
           cmake --build build -j
           ctest --test-dir build --output-on-failure
 
-  # Integer division by zero traps on x86, Arm and s390x, but not on PowerPC or
-  # RISC-V, so subprocess_fail_divzero behaves differently there.
+  # Builds the whole suite for four architectures, then runs only the tests
+  # whose outcome depends on the instruction set: integer division by zero traps
+  # on x86, Arm and s390x, but not on PowerPC or RISC-V, so what
+  # subprocess_fail_divzero may assert differs by target.
   #
-  # These run under qemu-user. That is sound for instruction-set semantics; it
-  # is not sound for posix_spawn's exec-error reporting, which qemu-user does
-  # not propagate. Do not read a create_ex failure here as a platform property.
+  # The run is narrowed on purpose. These jobs execute under qemu-user, which
+  # reproduces instruction-set semantics faithfully but does not propagate the
+  # errno that glibc's posix_spawn uses to report a failed exec. The whole suite
+  # therefore fails here on every architecture, including ones with no
+  # architectural difference at all — s390x fails identically to ppc64le, and
+  # emulated aarch64 fails the same way despite glibc 2.36 reporting correctly
+  # on real hardware. Those failures would be artifacts of the emulator, so the
+  # process-creation tests are not run here; the build still covers compilation
+  # for each architecture.
   foreign-arch:
     runs-on: ubuntu-latest
     strategy:
@@ -106,7 +118,7 @@ jobs:
           run: |
             cmake -S test -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
             cmake --build build -j
-            ctest --test-dir build --output-on-failure
+            cd build && ./subprocess_test '--filter=*divzero'
 
   # Real BSD virtual machines rather than cross-compilation. NetBSD appears
   # twice deliberately: posix_spawn_file_actions_addchdir arrived in 10.0 and is
