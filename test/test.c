@@ -1,6 +1,8 @@
 #include "subprocess.h"
 #include "utest.h"
 
+#include <stdlib.h>
+
 #define SUBPROCESS_SUITE c
 #include "test_shared.h"
 
@@ -158,4 +160,159 @@ UTEST(c, create_keeps_pipe_ends_off_the_standard_descriptors) {
   EXPECT_GT_MSG(stdout_fd, STDERR_FILENO,
                 "a pipe end sits on a standard descriptor");
 #endif
+}
+
+#if defined(_WIN32)
+UTEST_C_FUNC __declspec(dllimport) void *__stdcall
+OpenProcess(unsigned long, int, unsigned long);
+#endif
+
+static int subprocess_test_pid_alive(unsigned long pid) {
+#if defined(_WIN32)
+  const unsigned long synchronize = 0x00100000;
+  const unsigned long wait_object_0 = 0x00000000;
+  void *process = OpenProcess(synchronize, 0, pid);
+  int alive;
+
+  if (!process) {
+    return 0;
+  }
+  alive = wait_object_0 != WaitForSingleObject(process, 0);
+  CloseHandle(process);
+  return alive;
+#else
+  if ((0 != kill((pid_t)pid, 0)) && (EPERM != errno)) {
+    return 0;
+  }
+#if defined(__linux__)
+  {
+    char path[64];
+    char status[512];
+    char *command_end;
+    FILE *status_file;
+
+    if (0 < snprintf(path, sizeof(path), "/proc/%lu/stat", pid)) {
+      status_file = fopen(path, "r");
+      if (status_file) {
+        if (fgets(status, sizeof(status), status_file)) {
+          command_end = strrchr(status, ')');
+          if (command_end && (' ' == command_end[1]) &&
+              ('Z' == command_end[2])) {
+            fclose(status_file);
+            return 0;
+          }
+        }
+        fclose(status_file);
+      }
+    }
+  }
+#endif
+  return 1;
+#endif
+}
+
+static int subprocess_test_parse_pids(const char *text, unsigned long *child,
+                                      unsigned long *descendant) {
+  char *end;
+
+  errno = 0;
+  *child = strtoul(text, &end, 10);
+  if ((0 != errno) || (end == text)) {
+    return 0;
+  }
+
+  text = end;
+  *descendant = strtoul(text, &end, 10);
+  return (0 == errno) && (end != text);
+}
+
+UTEST(c, create_terminate_on_parent_exit_failure_does_not_leak) {
+  const char *const command_line[] = {
+      "./subprocess_this_command_should_not_exist", 0};
+  struct subprocess_s process;
+  int before;
+  int after;
+  int attempt;
+
+  before = subprocess_test_open_resource_count();
+  ASSERT_TRUE(0 <= before);
+
+  for (attempt = 0; attempt < 5; attempt++) {
+    ASSERT_EQ(subprocess_error_not_found,
+              subprocess_create(command_line,
+                                subprocess_option_terminate_on_parent_exit,
+                                &process));
+  }
+
+  after = subprocess_test_open_resource_count();
+  ASSERT_TRUE(0 <= after);
+  ASSERT_EQ(before, after);
+}
+
+UTEST(c, create_terminate_on_parent_exit) {
+  const char *const command_line[] = {"./process_parent_death_parent", 0};
+  struct subprocess_s process;
+  char child_pids[128];
+  unsigned long child_pid = 0;
+  unsigned long descendant_pid = 0;
+  int return_code = -1;
+  int attempt;
+
+  ASSERT_EQ(0, subprocess_create(command_line, 0, &process));
+  ASSERT_TRUE(
+      fgets(child_pids, sizeof(child_pids), subprocess_stdout(&process)) != 0);
+  ASSERT_TRUE(
+      subprocess_test_parse_pids(child_pids, &child_pid, &descendant_pid));
+  ASSERT_EQ(0, subprocess_terminate(&process));
+  ASSERT_EQ(0, subprocess_join(&process, &return_code));
+  ASSERT_NE(0, return_code);
+  ASSERT_EQ(0, subprocess_destroy(&process));
+
+  for (attempt = 0; attempt < 50; attempt++) {
+    if (!subprocess_test_pid_alive(child_pid) &&
+        !subprocess_test_pid_alive(descendant_pid)) {
+      break;
+    }
+#if defined(_WIN32)
+    Sleep(100);
+#else
+    usleep(100000);
+#endif
+  }
+
+  ASSERT_FALSE(subprocess_test_pid_alive(child_pid));
+  ASSERT_FALSE(subprocess_test_pid_alive(descendant_pid));
+}
+
+UTEST(c, destroy_terminate_on_parent_exit) {
+  const char *const command_line[] = {"./process_parent_death_child", 0};
+  struct subprocess_s process;
+  char child_pids[128];
+  unsigned long child_pid = 0;
+  unsigned long descendant_pid = 0;
+  int attempt;
+
+  ASSERT_EQ(0, subprocess_create(command_line,
+                                 subprocess_option_terminate_on_parent_exit,
+                                 &process));
+  ASSERT_TRUE(
+      fgets(child_pids, sizeof(child_pids), subprocess_stdout(&process)) != 0);
+  ASSERT_TRUE(
+      subprocess_test_parse_pids(child_pids, &child_pid, &descendant_pid));
+  ASSERT_EQ(0, subprocess_destroy(&process));
+
+  for (attempt = 0; attempt < 50; attempt++) {
+    if (!subprocess_test_pid_alive(child_pid) &&
+        !subprocess_test_pid_alive(descendant_pid)) {
+      break;
+    }
+#if defined(_WIN32)
+    Sleep(100);
+#else
+    usleep(100000);
+#endif
+  }
+
+  ASSERT_FALSE(subprocess_test_pid_alive(child_pid));
+  ASSERT_FALSE(subprocess_test_pid_alive(descendant_pid));
 }
