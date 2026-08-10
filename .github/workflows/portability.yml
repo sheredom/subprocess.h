@@ -1,0 +1,154 @@
+name: Portability
+
+# Complements cmake.yml, which covers x86-64 Linux, Windows and macOS well.
+# Everything here reaches a dimension that matrix cannot: the capability paths
+# no runner selects on its own, 32-bit, non-x86 architectures, and the BSDs.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+
+  # subprocess.h picks its implementation from compile-time probes, so an
+  # ordinary runner only ever selects one combination and the others are never
+  # executed. Forcing them costs nothing and exercises the paths that platforms
+  # without a posix_spawn chdir file action take.
+  capability-paths:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: fork instead of posix_spawn
+            defs: -DSUBPROCESS_SPAWN_VIA_FORK=1
+          - name: no chdir file action, no exec error reporting
+            defs: -DSUBPROCESS_HAVE_CWD=0 -DSUBPROCESS_SPAWN_REPORTS_EXEC_ERRORS=0
+          - name: no chdir file action only
+            defs: -DSUBPROCESS_HAVE_CWD=0
+    name: ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test
+        run: |
+          cmake -S test -B build \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_C_FLAGS="${{ matrix.defs }}" \
+            -DCMAKE_CXX_FLAGS="${{ matrix.defs }}"
+          cmake --build build -j
+          ctest --test-dir build --output-on-failure
+
+  # On ILP32, uint64_t is unsigned long long, and -Wpedantic then rejects both
+  # oversized literals and the ll length modifier. Nothing else here is 32-bit.
+  linux-32-bit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install multilib
+        run: sudo apt-get update && sudo apt-get install -y gcc-multilib g++-multilib
+      - name: Build and test
+        run: |
+          cmake -S test -B build \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_C_FLAGS=-m32 \
+            -DCMAKE_CXX_FLAGS=-m32 \
+            -DCMAKE_EXE_LINKER_FLAGS=-m32
+          cmake --build build -j
+          ctest --test-dir build --output-on-failure
+
+  windows-x86:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S test -B build -A Win32
+      - run: cmake --build build --config RelWithDebInfo
+      - run: ctest --test-dir build -C RelWithDebInfo --output-on-failure
+
+  # musl differs from glibc in the areas this library touches, and it is what
+  # Alpine-based consumers get.
+  musl:
+    runs-on: ubuntu-latest
+    container: alpine:3
+    steps:
+      - name: Install toolchain
+        run: apk add --no-cache gcc g++ musl-dev cmake make linux-headers git
+      - uses: actions/checkout@v4
+      - name: Build and test
+        run: |
+          cmake -S test -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          cmake --build build -j
+          ctest --test-dir build --output-on-failure
+
+  # Integer division by zero traps on x86, Arm and s390x, but not on PowerPC or
+  # RISC-V, so subprocess_fail_divzero behaves differently there.
+  #
+  # These run under qemu-user. That is sound for instruction-set semantics; it
+  # is not sound for posix_spawn's exec-error reporting, which qemu-user does
+  # not propagate. Do not read a create_ex failure here as a platform property.
+  foreign-arch:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [ppc64le, riscv64, s390x, armv7]
+    name: linux ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: uraimo/run-on-arch-action@v3
+        with:
+          arch: ${{ matrix.arch }}
+          distro: ubuntu_latest
+          install: |
+            apt-get update -q
+            apt-get install -q -y build-essential cmake
+          run: |
+            cmake -S test -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+            cmake --build build -j
+            ctest --test-dir build --output-on-failure
+
+  # Real BSD virtual machines rather than cross-compilation. NetBSD appears
+  # twice deliberately: posix_spawn_file_actions_addchdir arrived in 10.0 and is
+  # spelled without the _np suffix, so 9.x and 10.x take different paths.
+  bsd:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: freebsd, version: "14.3", pkg: "sudo pkg install -y cmake" }
+          - { os: netbsd,  version: "9.4",  pkg: "sudo pkgin -y install cmake" }
+          - { os: netbsd,  version: "10.1", pkg: "sudo pkgin -y install cmake" }
+          - { os: openbsd, version: "7.9",  pkg: "sudo pkg_add cmake" }
+    name: ${{ matrix.os }} ${{ matrix.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cross-platform-actions/action@v1.4.0
+        with:
+          operating_system: ${{ matrix.os }}
+          version: ${{ matrix.version }}
+          run: |
+            ${{ matrix.pkg }}
+            cmake -S test -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+            cmake --build build
+            ctest --test-dir build --output-on-failure
+
+  # SUBPROCESS_HAVE_CWD flips at macOS 10.15. Building only against the runner's
+  # own SDK never exercises the older side of that boundary.
+  macos-deployment-target:
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ["10.14", "10.15", "11.0"]
+    name: macOS deployment target ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test
+        run: |
+          cmake -S test -B build \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=${{ matrix.target }}
+          cmake --build build -j
+          ctest --test-dir build --output-on-failure
