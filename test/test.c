@@ -38,3 +38,35 @@ UTEST(c, create_does_not_inherit_another_subprocess_pipe) {
                 "the second subprocess inherited the first subprocess pipe");
 #endif
 }
+
+#if defined(_WIN32)
+UTEST(c, create_does_not_inherit_unlisted_windows_handle) {
+  const unsigned long wait_timeout = 0x00000102;
+  const char *command_line[] = {"./process_signal_handle", 0, 0};
+  struct subprocess_security_attributes_s security_attributes = {
+      sizeof(security_attributes), SUBPROCESS_NULL, 1};
+  struct subprocess_s process;
+  char handle_argument[32];
+  void *inheritable_handle;
+  unsigned long wait_result;
+  int return_code = -1;
+
+  inheritable_handle = CreateEventA(
+      SUBPROCESS_PTR_CAST(LPSECURITY_ATTRIBUTES, &security_attributes), 1, 0,
+      SUBPROCESS_NULL);
+  ASSERT_TRUE(inheritable_handle);
+  ASSERT_TRUE(0 < snprintf(handle_argument, sizeof(handle_argument), "%p",
+                           inheritable_handle));
+  command_line[1] = handle_argument;
+
+  ASSERT_EQ(0, subprocess_create(command_line, 0, &process));
+  ASSERT_EQ(0, subprocess_join(&process, &return_code));
+  ASSERT_EQ(0, subprocess_destroy(&process));
+  wait_result = WaitForSingleObject(inheritable_handle, 0);
+  ASSERT_TRUE(CloseHandle(inheritable_handle));
+
+  EXPECT_EQ(0, return_code);
+  EXPECT_EQ_MSG(wait_timeout, wait_result,
+                "subprocess inherited a handle outside its standard streams");
+}
+#endif
