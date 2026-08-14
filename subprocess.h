@@ -306,15 +306,6 @@ subprocess_weak int subprocess_alive(struct subprocess_s *const process);
 #endif
 #endif
 
-/* Exit status used by the forked child when it cannot reach exec. No header
-   defines this: 127 is the shell convention for "command not found" (POSIX
-   XCU 2.8.2), and the value glibc's posix_spawn used before it learned to
-   report exec failures. The real reason travels over the error pipe; this is
-   only what a caller sees if that write is lost. */
-#if !defined(SUBPROCESS_EXEC_FAILURE_STATUS)
-#define SUBPROCESS_EXEC_FAILURE_STATUS 127
-#endif
-
 /* Whether subprocess_create_ex can honour process_cwd. glibc only gained
    posix_spawn_file_actions_addchdir_np in 2.29, and macOS in 10.15; the SDKs
    mark it unavailable on iOS, tvOS and watchOS, where the undefined version
@@ -1388,7 +1379,9 @@ cleanup:
     /* Nothing useful can be done if this write fails; the parent then sees EOF
        and reports success, exactly as posix_spawn would without exec reporting. */
     (void)!write(exec_errfd[1], &child_errno, sizeof(child_errno));
-    _exit(SUBPROCESS_EXEC_FAILURE_STATUS);
+    /* 127 is what POSIX requires posix_spawn's child to exit with when exec
+       fails, so both implementations look the same to a caller. */
+    _exit(127);
   }
 
   /* Parent. */
