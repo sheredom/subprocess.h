@@ -49,8 +49,9 @@ UTEST(c, create_does_not_inherit_unlisted_windows_handle) {
   void *inheritable_handle;
   int return_code = -1;
 
-  inheritable_handle =
-      CreateEventA(&security_attributes, 1, 0, SUBPROCESS_NULL);
+  inheritable_handle = CreateEventA(
+      SUBPROCESS_PTR_CAST(LPSECURITY_ATTRIBUTES, &security_attributes), 1, 0,
+      SUBPROCESS_NULL);
   ASSERT_TRUE(inheritable_handle);
   ASSERT_TRUE(0 < snprintf(handle_argument, sizeof(handle_argument), "%p",
                            inheritable_handle));
