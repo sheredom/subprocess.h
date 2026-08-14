@@ -709,6 +709,12 @@ int subprocess_create(const char *const commandLine[], int options,
                               SUBPROCESS_NULL, out_process);
 }
 
+#if SUBPROCESS_SPAWN_VIA_FORK
+/* Not every platform declares execvpe: AIX exports it from libc without ever
+   naming it in a header, and glibc hides it behind _GNU_SOURCE. */
+extern int execvpe(const char *, char *const *, char *const *);
+#endif
+
 int subprocess_create_ex(const char *const commandLine[], int options,
                          const char *const environment[],
                          const char *const process_cwd,
@@ -1360,8 +1366,6 @@ cleanup:
 #endif
     if (subprocess_option_search_user_path ==
         (options & subprocess_option_search_user_path)) {
-      /* AIX exports execvpe from libc but declares it in no header. */
-      extern int execvpe(const char *, char *const *, char *const *);
       execvpe(commandLine[0],
               SUBPROCESS_CONST_CAST(char *const *, commandLine),
               SUBPROCESS_CONST_CAST(char *const *, used_environment));
