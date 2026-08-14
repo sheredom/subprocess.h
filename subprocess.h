@@ -351,6 +351,7 @@ typedef struct _PROCESS_INFORMATION *LPPROCESS_INFORMATION;
 typedef struct _SECURITY_ATTRIBUTES *LPSECURITY_ATTRIBUTES;
 typedef struct _STARTUPINFOW *LPSTARTUPINFOW;
 typedef struct _OVERLAPPED *LPOVERLAPPED;
+typedef struct _PROC_THREAD_ATTRIBUTE_LIST *LPPROC_THREAD_ATTRIBUTE_LIST;
 
 #ifdef __clang__
 #pragma clang diagnostic pop
@@ -457,12 +458,13 @@ __declspec(dllimport) int __stdcall CreateProcessW(
     LPSECURITY_ATTRIBUTES, int, unsigned long, void *,
     const subprocess_wchar_t *, LPSTARTUPINFOW, LPPROCESS_INFORMATION);
 __declspec(dllimport) int __stdcall
-InitializeProcThreadAttributeList(void *, unsigned long, unsigned long,
-                                  subprocess_size_t *);
-__declspec(dllimport) int __stdcall
-UpdateProcThreadAttribute(void *, subprocess_size_t, subprocess_size_t, void *,
-                          subprocess_size_t, void *, subprocess_size_t *);
-__declspec(dllimport) void __stdcall DeleteProcThreadAttributeList(void *);
+InitializeProcThreadAttributeList(LPPROC_THREAD_ATTRIBUTE_LIST, unsigned long,
+                                  unsigned long, subprocess_size_t *);
+__declspec(dllimport) int __stdcall UpdateProcThreadAttribute(
+    LPPROC_THREAD_ATTRIBUTE_LIST, unsigned long, subprocess_size_t, void *,
+    subprocess_size_t, void *, subprocess_size_t *);
+__declspec(dllimport) void __stdcall
+DeleteProcThreadAttributeList(LPPROC_THREAD_ATTRIBUTE_LIST);
 __declspec(dllimport) int __stdcall MultiByteToWideChar(
     unsigned int, unsigned long, const char *, int, subprocess_wchar_t *, int);
 __declspec(dllimport) int __stdcall CloseHandle(void *);
@@ -766,7 +768,7 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   subprocess_wchar_t *used_environment = SUBPROCESS_NULL;
   subprocess_size_t attribute_list_size = 0;
   subprocess_size_t inherited_handle_count = 0;
-  void *attribute_list = SUBPROCESS_NULL;
+  LPPROC_THREAD_ATTRIBUTE_LIST attribute_list = SUBPROCESS_NULL;
   void *inherited_handles[3];
   struct subprocess_startup_info_ex_s startInfoEx;
   struct subprocess_startup_info_s startInfo = {0,
@@ -1159,7 +1161,8 @@ int subprocess_create_ex(const char *const commandLine[], int options,
     goto cleanup;
   }
 
-  attribute_list = _alloca(attribute_list_size);
+  attribute_list = SUBPROCESS_PTR_CAST(LPPROC_THREAD_ATTRIBUTE_LIST,
+                                       _alloca(attribute_list_size));
   if (!attribute_list || !InitializeProcThreadAttributeList(
                              attribute_list, 1, 0, &attribute_list_size)) {
     result = subprocess_error_spawn;
