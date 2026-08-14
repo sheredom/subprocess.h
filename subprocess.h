@@ -1444,6 +1444,14 @@ cleanup:
       }
     }
 
+    /* dup2 clears FD_CLOEXEC, except dup2(fd, fd), which is a no-op. A pipe
+       end already sitting on 0, 1 or 2 would otherwise stay close-on-exec. */
+    if ((-1 == fcntl(STDIN_FILENO, F_SETFD, 0)) ||
+        (-1 == fcntl(STDOUT_FILENO, F_SETFD, 0)) ||
+        (-1 == fcntl(STDERR_FILENO, F_SETFD, 0))) {
+      goto child_failed;
+    }
+
     /* The originals are only closed once they have been duplicated, so that a
        pipe end that already sits on 0, 1 or 2 is not closed out from under us. */
     if (stdinfd[0] > STDERR_FILENO) {
