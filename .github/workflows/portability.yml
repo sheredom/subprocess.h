@@ -1,8 +1,6 @@
 name: Portability
 
-# Complements cmake.yml, which covers x86-64 Linux, Windows and macOS well.
-# Everything here reaches a dimension that matrix cannot: the capability paths
-# no runner selects on its own, 32-bit, non-x86 architectures, and the BSDs.
+# Dimensions cmake.yml does not reach: capability paths, 32-bit, non-x86, BSD.
 
 on:
   push:
@@ -12,14 +10,6 @@ on:
 
 jobs:
 
-  # subprocess.h picks its implementation from compile-time probes, so an
-  # ordinary runner only ever selects one combination and the others are never
-  # executed. Forcing them costs nothing and exercises the paths that platforms
-  # without a posix_spawn chdir file action take.
-  #
-  # SUBPROCESS_SPAWN_VIA_FORK does not exist yet; that combination is a no-op
-  # until #112 lands, at which point this job starts exercising the fork
-  # implementation on an ordinary runner.
   capability-paths:
     runs-on: ubuntu-latest
     strategy:
@@ -44,8 +34,6 @@ jobs:
           cmake --build build -j
           ctest --test-dir build --output-on-failure
 
-  # On ILP32, uint64_t is unsigned long long, and -Wpedantic then rejects both
-  # oversized literals and the ll length modifier. Nothing else here is 32-bit.
   linux-32-bit:
     runs-on: ubuntu-latest
     steps:
@@ -70,8 +58,6 @@ jobs:
       - run: cmake --build build --config RelWithDebInfo
       - run: ctest --test-dir build -C RelWithDebInfo --output-on-failure
 
-  # musl differs from glibc in the areas this library touches, and it is what
-  # Alpine-based consumers get.
   musl:
     runs-on: ubuntu-latest
     container: alpine:3
@@ -85,20 +71,9 @@ jobs:
           cmake --build build -j
           ctest --test-dir build --output-on-failure
 
-  # Builds the whole suite for four architectures, then runs only the tests
-  # whose outcome depends on the instruction set: integer division by zero traps
-  # on x86, Arm and s390x, but not on PowerPC or RISC-V, so what
-  # subprocess_fail_divzero may assert differs by target.
-  #
-  # The run is narrowed on purpose. These jobs execute under qemu-user, which
-  # reproduces instruction-set semantics faithfully but does not propagate the
-  # errno that glibc's posix_spawn uses to report a failed exec. The whole suite
-  # therefore fails here on every architecture, including ones with no
-  # architectural difference at all — s390x fails identically to ppc64le, and
-  # emulated aarch64 fails the same way despite glibc 2.36 reporting correctly
-  # on real hardware. Those failures would be artifacts of the emulator, so the
-  # process-creation tests are not run here; the build still covers compilation
-  # for each architecture.
+  # Builds everything, runs only *divzero: qemu-user does not propagate the
+  # errno posix_spawn reports a failed exec with, so the rest fails here on
+  # every architecture regardless of target.
   foreign-arch:
     runs-on: ubuntu-latest
     strategy:
@@ -120,9 +95,7 @@ jobs:
             cmake --build build -j
             cd build && ./subprocess_test '--filter=*divzero'
 
-  # Real BSD virtual machines rather than cross-compilation. NetBSD appears
-  # twice deliberately: posix_spawn_file_actions_addchdir arrived in 10.0 and is
-  # spelled without the _np suffix, so 9.x and 10.x take different paths.
+  # NetBSD twice on purpose: addchdir arrived in 10.0, so 9.x takes another path.
   bsd:
     runs-on: ubuntu-latest
     strategy:
@@ -146,8 +119,6 @@ jobs:
             cmake --build build
             ctest --test-dir build --output-on-failure
 
-  # SUBPROCESS_HAVE_CWD flips at macOS 10.15. Building only against the runner's
-  # own SDK never exercises the older side of that boundary.
   macos-deployment-target:
     runs-on: macos-latest
     strategy:
