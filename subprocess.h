@@ -667,6 +667,49 @@ int subprocess_create_named_pipe_helper(void **rd, void **wr) {
 }
 #endif
 
+#if !defined(_WIN32)
+/* Create pipes with close-on-exec set so later subprocesses do not inherit
+   descriptors belonging to subprocesses which are already running. */
+static int subprocess_pipe_cloexec(int fds[2]) {
+  int fd_flags;
+  int index;
+  int saved_errno;
+
+#if defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__) ||       \
+    defined(__OpenBSD__) || defined(__DragonFly__) ||                         \
+    (defined(__sun) && defined(__SVR4))
+  if (0 == pipe2(fds, O_CLOEXEC)) {
+    return 0;
+  }
+
+  /* Older kernels can lack pipe2 even when the C library declares it. */
+  if (ENOSYS != errno) {
+    return -1;
+  }
+#endif
+
+  if (0 != pipe(fds)) {
+    return -1;
+  }
+
+  for (index = 0; index < 2; index++) {
+    fd_flags = fcntl(fds[index], F_GETFD, 0);
+    if ((-1 == fd_flags) ||
+        (-1 == fcntl(fds[index], F_SETFD, fd_flags | FD_CLOEXEC))) {
+      saved_errno = errno;
+      close(fds[0]);
+      close(fds[1]);
+      fds[0] = -1;
+      fds[1] = -1;
+      errno = saved_errno;
+      return -1;
+    }
+  }
+
+  return 0;
+}
+#endif
+
 int subprocess_create(const char *const commandLine[], int options,
                       struct subprocess_s *const out_process) {
   return subprocess_create_ex(commandLine, options, SUBPROCESS_NULL,
@@ -1202,13 +1245,13 @@ cleanup:
 
   memset(out_process, 0, sizeof(*out_process));
 
-  if (0 != pipe(stdinfd)) {
+  if (0 != subprocess_pipe_cloexec(stdinfd)) {
     saved_errno = errno;
     result = subprocess_error_pipe;
     goto cleanup;
   }
 
-  if (0 != pipe(stdoutfd)) {
+  if (0 != subprocess_pipe_cloexec(stdoutfd)) {
     saved_errno = errno;
     result = subprocess_error_pipe;
     goto cleanup;
@@ -1216,7 +1259,7 @@ cleanup:
 
   if (subprocess_option_combined_stdout_stderr !=
       (options & subprocess_option_combined_stdout_stderr)) {
-    if (0 != pipe(stderrfd)) {
+    if (0 != subprocess_pipe_cloexec(stderrfd)) {
       saved_errno = errno;
       result = subprocess_error_pipe;
       goto cleanup;
