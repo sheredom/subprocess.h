@@ -39,8 +39,8 @@ UTEST(c, create_does_not_inherit_another_subprocess_pipe) {
 #endif
 }
 
-UTEST(c, create_does_not_inherit_unlisted_windows_handle) {
 #if defined(_WIN32)
+UTEST(c, create_does_not_inherit_unlisted_windows_handle) {
   const unsigned long wait_timeout = 0x00000102;
   const char *command_line[] = {"./process_signal_handle", 0, 0};
   struct subprocess_security_attributes_s security_attributes = {
@@ -68,7 +68,5 @@ UTEST(c, create_does_not_inherit_unlisted_windows_handle) {
   EXPECT_EQ(0, return_code);
   EXPECT_EQ_MSG(wait_timeout, wait_result,
                 "subprocess inherited a handle outside its standard streams");
-#else
-  UTEST_SKIP("Windows handle-inheritance test");
-#endif
 }
+#endif
