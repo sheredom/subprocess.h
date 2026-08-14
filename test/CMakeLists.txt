@@ -62,6 +62,7 @@ set(SUBPROCESS_HELPER_SOURCES
   process_stdout_large.c
   process_call_return_argc.c
   process_cwd.c
+  process_is_fd_open.c
 )
 
 foreach(SUBPROCESS_HELPER_SOURCE ${SUBPROCESS_HELPER_SOURCES})
