@@ -41,12 +41,14 @@ UTEST(c, create_does_not_inherit_another_subprocess_pipe) {
 
 UTEST(c, create_does_not_inherit_unlisted_windows_handle) {
 #if defined(_WIN32)
-  const char *command_line[] = {"./process_is_handle_open", 0, 0};
+  const unsigned long wait_timeout = 0x00000102;
+  const char *command_line[] = {"./process_signal_handle", 0, 0};
   struct subprocess_security_attributes_s security_attributes = {
       sizeof(security_attributes), SUBPROCESS_NULL, 1};
   struct subprocess_s process;
   char handle_argument[32];
   void *inheritable_handle;
+  unsigned long wait_result;
   int return_code = -1;
 
   inheritable_handle = CreateEventA(
@@ -60,9 +62,11 @@ UTEST(c, create_does_not_inherit_unlisted_windows_handle) {
   ASSERT_EQ(0, subprocess_create(command_line, 0, &process));
   ASSERT_EQ(0, subprocess_join(&process, &return_code));
   ASSERT_EQ(0, subprocess_destroy(&process));
+  wait_result = WaitForSingleObject(inheritable_handle, 0);
   ASSERT_TRUE(CloseHandle(inheritable_handle));
 
-  EXPECT_EQ_MSG(0, return_code,
+  EXPECT_EQ(0, return_code);
+  EXPECT_EQ_MSG(wait_timeout, wait_result,
                 "subprocess inherited a handle outside its standard streams");
 #else
   UTEST_SKIP("Windows handle-inheritance test");
