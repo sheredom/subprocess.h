@@ -275,10 +275,6 @@ subprocess_weak int subprocess_alive(struct subprocess_s *const process);
 #include <unistd.h>
 #endif
 
-/* __NetBSD_Version__ lives in <sys/param.h>, not in the compiler's predefines,
-   and the probes below need it. Including it early keeps them honest; without
-   it the version folds to 0 and every NetBSD would take the fork path, which
-   works but is heavier than necessary on the releases that do not need it. */
 #if defined(__NetBSD__)
 #include <sys/param.h>
 #endif
@@ -297,14 +293,10 @@ subprocess_weak int subprocess_alive(struct subprocess_s *const process);
 #endif
 #endif
 
-/* Whether to launch the child with fork()+exec() instead of posix_spawn().
-   Some platforms provide no posix_spawn_file_actions_addchdir under either
-   spelling, so process_cwd cannot be honoured through posix_spawn at all:
-   AIX has never had it, OpenBSD does not have it as of 7.9, and NetBSD gained
-   it only in 10.0. Forking lets the child chdir() before exec, and a
-   close-on-exec pipe carries any exec() errno back to the parent, so both
-   capabilities below become available on such platforms.
-   Define this yourself to force either implementation. */
+/* Whether to launch the child with fork()+exec() instead of posix_spawn(),
+   for platforms with no posix_spawn_file_actions_addchdir under either
+   spelling: the child chdir()s before exec, and a close-on-exec pipe carries
+   exec's errno back. Define this yourself to force either implementation. */
 #if !defined(SUBPROCESS_SPAWN_VIA_FORK)
 #if defined(_AIX) || defined(__OpenBSD__) ||                                  \
     (defined(__NetBSD__) && (__NetBSD_Version__ < 1000000000))
