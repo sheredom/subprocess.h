@@ -345,7 +345,7 @@ typedef size_t subprocess_size_t;
 /* SIZE_T is ULONG_PTR, which is not size_t: on Win32 both are 32 bits wide but
    unsigned long and unsigned int are still distinct types. */
 #ifdef _WIN64
-typedef unsigned __int64 subprocess_ulongptr_t;
+typedef subprocess_size_t subprocess_ulongptr_t;
 #else
 typedef unsigned long subprocess_ulongptr_t;
 #endif
