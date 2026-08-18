@@ -378,6 +378,14 @@ typedef intptr_t subprocess_intptr_t;
 typedef size_t subprocess_size_t;
 #endif
 
+/* SIZE_T is ULONG_PTR, which is not size_t: on Win32 both are 32 bits wide but
+   unsigned long and unsigned int are still distinct types. */
+#ifdef _WIN64
+typedef subprocess_size_t subprocess_ulongptr_t;
+#else
+typedef unsigned long subprocess_ulongptr_t;
+#endif
+
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wreserved-identifier"
@@ -495,10 +503,10 @@ __declspec(dllimport) int __stdcall CreateProcessW(
     const subprocess_wchar_t *, LPSTARTUPINFOW, LPPROCESS_INFORMATION);
 __declspec(dllimport) int __stdcall
 InitializeProcThreadAttributeList(LPPROC_THREAD_ATTRIBUTE_LIST, unsigned long,
-                                  unsigned long, subprocess_size_t *);
+                                  unsigned long, subprocess_ulongptr_t *);
 __declspec(dllimport) int __stdcall UpdateProcThreadAttribute(
-    LPPROC_THREAD_ATTRIBUTE_LIST, unsigned long, subprocess_size_t, void *,
-    subprocess_size_t, void *, subprocess_size_t *);
+    LPPROC_THREAD_ATTRIBUTE_LIST, unsigned long, subprocess_ulongptr_t, void *,
+    subprocess_ulongptr_t, void *, subprocess_ulongptr_t *);
 __declspec(dllimport) void __stdcall
 DeleteProcThreadAttributeList(LPPROC_THREAD_ATTRIBUTE_LIST);
 __declspec(dllimport) int __stdcall MultiByteToWideChar(
@@ -718,6 +726,49 @@ int subprocess_create_named_pipe_helper(void **rd, void **wr) {
 #endif
 
 #if !defined(_WIN32)
+/* Move a pipe end off 0, 1 or 2. Duplicating a descriptor onto itself is a
+   no-op, so a pipe end already sitting on a standard descriptor would keep its
+   FD_CLOEXEC and be closed by exec, leaving the child without that stream. */
+static int subprocess_fds_above_std(int fds[2]) {
+  int fd_flags;
+  int index;
+  int moved;
+  int saved_errno;
+
+  for (index = 0; index < 2; index++) {
+    if (fds[index] > STDERR_FILENO) {
+      continue;
+    }
+
+    moved = fcntl(fds[index], F_DUPFD, STDERR_FILENO + 1);
+    if (-1 != moved) {
+      fd_flags = fcntl(moved, F_GETFD, 0);
+      if ((-1 == fd_flags) ||
+          (-1 == fcntl(moved, F_SETFD, fd_flags | FD_CLOEXEC))) {
+        saved_errno = errno;
+        close(moved);
+        errno = saved_errno;
+        moved = -1;
+      }
+    }
+
+    if (-1 == moved) {
+      saved_errno = errno;
+      close(fds[0]);
+      close(fds[1]);
+      fds[0] = -1;
+      fds[1] = -1;
+      errno = saved_errno;
+      return -1;
+    }
+
+    close(fds[index]);
+    fds[index] = moved;
+  }
+
+  return 0;
+}
+
 /* Create pipes with close-on-exec set so later subprocesses do not inherit
    descriptors belonging to subprocesses which are already running. */
 static int subprocess_pipe_cloexec(int fds[2]) {
@@ -729,7 +780,7 @@ static int subprocess_pipe_cloexec(int fds[2]) {
     defined(__OpenBSD__) || defined(__DragonFly__) ||                         \
     (defined(__sun) && defined(__SVR4))
   if (0 == pipe2(fds, O_CLOEXEC)) {
-    return 0;
+    return subprocess_fds_above_std(fds);
   }
 
   /* Older kernels can lack pipe2 even when the C library declares it. */
@@ -756,7 +807,7 @@ static int subprocess_pipe_cloexec(int fds[2]) {
     }
   }
 
-  return 0;
+  return subprocess_fds_above_std(fds);
 }
 #endif
 
@@ -808,7 +859,7 @@ int subprocess_create_ex(const char *const commandLine[], int options,
                                                     SUBPROCESS_NULL, 1};
   subprocess_wchar_t empty_environment[2] = {0, 0};
   subprocess_wchar_t *used_environment = SUBPROCESS_NULL;
-  subprocess_size_t attribute_list_size = 0;
+  subprocess_ulongptr_t attribute_list_size = 0;
   subprocess_size_t inherited_handle_count = 0;
   LPPROC_THREAD_ATTRIBUTE_LIST attribute_list = SUBPROCESS_NULL;
   void *inherited_handles[3];
