@@ -34,6 +34,8 @@
 #define SHEREDOM_UTEST_H_INCLUDED
 
 #ifdef _MSC_VER
+#pragma warning(push)
+
 /*
    Disable warning about not inlining 'inline' functions.
 */
@@ -94,6 +96,7 @@ typedef uint32_t utest_uint32_t;
 #endif
 
 #include <stddef.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -195,6 +198,9 @@ UTEST_C_FUNC __declspec(dllimport) int __stdcall QueryPerformanceFrequency(
 #define UTEST_USE_CLOCKGETTIME
 #endif
 
+#elif defined(_AIX)
+#include <time.h>
+
 #elif defined(__APPLE__)
 #include <time.h>
 #endif
@@ -202,11 +208,38 @@ UTEST_C_FUNC __declspec(dllimport) int __stdcall QueryPerformanceFrequency(
 #if defined(_MSC_VER) && (_MSC_VER < 1920)
 #define UTEST_PRId64 "I64d"
 #define UTEST_PRIu64 "I64u"
+#define UTEST_INT64_ARG(x) (x)
+#define UTEST_UINT64_ARG(x) (x)
 #else
+/* NetBSD hides the PRI macros from C++ before C++11 unless this is defined. */
+#if defined(__cplusplus) && !defined(__STDC_FORMAT_MACROS)
+#define __STDC_FORMAT_MACROS 1
+#endif
 #include <inttypes.h>
+#include <limits.h>
 
+/* Where uint64_t is not unsigned long the PRI macros use the ll length
+   modifier, which C90 and C++98 do not have. Only those builds print through
+   double instead; every other target keeps using the macros unchanged.
+
+   _MSC_VER is listed explicitly because neither of the other tests recognises
+   it: Windows is LLP64, so unsigned long is 32 bits even on x64, and MSVC
+   reports __cplusplus as 199711L without /Zc:__cplusplus and defines no
+   __STDC_VERSION__ in its default C mode. Anything reaching here is 1920 or
+   newer and prints 64-bit integers fine. */
+#if defined(_MSC_VER) || (ULONG_MAX > 0xfffffffful) ||                         \
+    (defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L)) ||            \
+    (defined(__cplusplus) && (__cplusplus >= 201103L))
 #define UTEST_PRId64 PRId64
 #define UTEST_PRIu64 PRIu64
+#define UTEST_INT64_ARG(x) (x)
+#define UTEST_UINT64_ARG(x) (x)
+#else
+#define UTEST_PRId64 ".0f"
+#define UTEST_PRIu64 ".0f"
+#define UTEST_INT64_ARG(x) UTEST_CAST(double, x)
+#define UTEST_UINT64_ARG(x) UTEST_CAST(double, x)
+#endif
 #endif
 
 #if defined(__cplusplus)
@@ -302,8 +335,8 @@ UTEST_C_FUNC __declspec(dllimport) int __stdcall QueryPerformanceFrequency(
     uninteresting, but for some reason MSVC's behaviour is to warn about
     including this system header. That *is* interesting
 */
-#pragma warning(disable : 4820)
 #pragma warning(push, 1)
+#pragma warning(disable : 4820)
 #include <io.h>
 #pragma warning(pop)
 #define UTEST_COLOUR_OUTPUT() (_isatty(_fileno(stdout)))
@@ -365,6 +398,10 @@ static UTEST_INLINE utest_int64_t utest_ns(void) {
 #endif
 #endif
   return UTEST_CAST(utest_int64_t, ts.tv_sec) * 1000 * 1000 * 1000 + ts.tv_nsec;
+#elif defined(_AIX)
+  struct timespec ts = {0, 0};
+  clock_gettime(CLOCK_REALTIME, &ts);
+  return UTEST_CAST(utest_int64_t, ts.tv_sec) * 1000 * 1000 * 1000 + ts.tv_nsec;
 #elif __EMSCRIPTEN__
   return emscripten_performance_now() * 1000000.0;
 #else
@@ -411,12 +448,21 @@ UTEST_EXTERN struct utest_state_s utest_state;
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wvariadic-macros"
 #pragma clang diagnostic ignored "-Wc++98-compat-pedantic"
+#if __has_warning("-Wformat-nonliteral")
+#pragma clang diagnostic ignored "-Wformat-nonliteral"
 #endif
+#endif
+#if defined(_MSC_VER)
+UTEST_C_FUNC __declspec(noinline) int utest_printf_msvc(const char *format,
+                                                       ...);
+#define UTEST_PRINTF(...) ((void)utest_printf_msvc(__VA_ARGS__))
+#else
 #define UTEST_PRINTF(...)                                                      \
   if (utest_state.output) {                                                    \
     fprintf(utest_state.output, __VA_ARGS__);                                  \
   }                                                                            \
   printf(__VA_ARGS__)
+#endif
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
@@ -982,7 +1028,7 @@ utest_strncpy_gcc(char *const dst, const char *const src, const size_t size) {
 #define EXPECT_MEMEQ(x, y, s) UTEST_MEMEQ(x, y, s, "", 0)
 #define EXPECT_MEMEQ_MSG(x, y, s, msg) UTEST_MEMEQ(x, y, s, msg, 0)
 #define ASSERT_MEMEQ(x, y, s) UTEST_MEMEQ(x, y, s, "", 1)
-#define ASSERT_MEMEQ_MSG(x, y, s, msg) UTEST_STREQ(x, y, s, msg, 1)
+#define ASSERT_MEMEQ_MSG(x, y, s, msg) UTEST_MEMEQ(x, y, s, msg, 1)
 
 #define UTEST_STREQ(x, y, msg, is_assert)                                      \
   UTEST_SURPRESS_WARNING_BEGIN do {                                            \
@@ -1215,6 +1261,15 @@ utest_strncpy_gcc(char *const dst, const char *const src, const size_t size) {
   UTEST_EXCEPTION_WITH_MESSAGE(x, exception_type, exception_message, msg, 1)
 #endif
 
+#if defined(_MSC_VER)
+#define UTEST_SURPRESS_MSVC_WARNINGS_BEGIN                                     \
+  __pragma(warning(push)) __pragma(warning(disable : 4711))
+#define UTEST_SURPRESS_MSVC_WARNINGS_END __pragma(warning(pop))
+#else
+#define UTEST_SURPRESS_MSVC_WARNINGS_BEGIN
+#define UTEST_SURPRESS_MSVC_WARNINGS_END
+#endif
+
 #if defined(__clang__)
 #if __has_warning("-Wunsafe-buffer-usage-in-libc-call")
 #define UTEST_SURPRESS_UNSAFE_BUFFER_USAGE                                     \
@@ -1234,20 +1289,25 @@ utest_strncpy_gcc(char *const dst, const char *const src, const size_t size) {
 #define UTEST_SURPRESS_GLOBAL_CONSTRUCTORS
 #endif
 
-#define UTEST_SURPRESS_WARNINGS_BEGIN                                          \
+#define UTEST_SURPRESS_COMPILER_WARNINGS_BEGIN                                 \
   _Pragma("clang diagnostic push")                                             \
       UTEST_SURPRESS_UNSAFE_BUFFER_USAGE                                       \
           UTEST_SURPRESS_GLOBAL_CONSTRUCTORS
-#define UTEST_SURPRESS_WARNINGS_END _Pragma("clang diagnostic pop")
+#define UTEST_SURPRESS_COMPILER_WARNINGS_END _Pragma("clang diagnostic pop")
 #elif defined(__GNUC__) && __GNUC__ >= 8 && defined(__cplusplus)
-#define UTEST_SURPRESS_WARNINGS_BEGIN                                          \
+#define UTEST_SURPRESS_COMPILER_WARNINGS_BEGIN                                 \
   _Pragma("GCC diagnostic push")                                               \
       _Pragma("GCC diagnostic ignored \"-Wclass-memaccess\"")
-#define UTEST_SURPRESS_WARNINGS_END _Pragma("GCC diagnostic pop")
+#define UTEST_SURPRESS_COMPILER_WARNINGS_END _Pragma("GCC diagnostic pop")
 #else
-#define UTEST_SURPRESS_WARNINGS_BEGIN
-#define UTEST_SURPRESS_WARNINGS_END
+#define UTEST_SURPRESS_COMPILER_WARNINGS_BEGIN
+#define UTEST_SURPRESS_COMPILER_WARNINGS_END
 #endif
+
+#define UTEST_SURPRESS_WARNINGS_BEGIN                                          \
+  UTEST_SURPRESS_MSVC_WARNINGS_BEGIN UTEST_SURPRESS_COMPILER_WARNINGS_BEGIN
+#define UTEST_SURPRESS_WARNINGS_END                                            \
+  UTEST_SURPRESS_COMPILER_WARNINGS_END UTEST_SURPRESS_MSVC_WARNINGS_END
 
 #define UTEST(SET, NAME)                                                       \
   UTEST_SURPRESS_WARNINGS_BEGIN                                                \
@@ -1387,7 +1447,8 @@ utest_strncpy_gcc(char *const dst, const char *const src, const size_t size) {
         utest_state.tests[index].file = __FILE__;                              \
         utest_state.tests[index].line = __LINE__;                              \
         iUp = UTEST_CAST(utest_uint64_t, i);                                   \
-        UTEST_SNPRINTF(name, name_size, "%s/%" UTEST_PRIu64, name_part, iUp);  \
+        UTEST_SNPRINTF(name, name_size, "%s/%" UTEST_PRIu64, name_part,        \
+                       UTEST_UINT64_ARG(iUp));                                 \
       } else {                                                                 \
         if (utest_state.tests) {                                               \
           free(utest_state.tests);                                             \
@@ -1417,7 +1478,7 @@ double utest_fabs(double d) {
     utest_uint64_t u;
   } both;
   both.d = d;
-  both.u &= 0x7fffffffffffffffu;
+  both.u &= ~(UTEST_CAST(utest_uint64_t, 1) << 63);
   return both.d;
 }
 
@@ -1430,8 +1491,8 @@ int utest_isnan(double d) {
     utest_uint64_t u;
   } both;
   both.d = d;
-  both.u &= 0x7fffffffffffffffu;
-  return both.u > 0x7ff0000000000000u;
+  both.u &= ~(UTEST_CAST(utest_uint64_t, 1) << 63);
+  return both.u > (UTEST_CAST(utest_uint64_t, 0x7ff00000) << 32);
 }
 
 #ifdef __clang__
@@ -1456,58 +1517,34 @@ UTEST_WEAK int utest_should_filter_test(const char *filter,
     const char *filter_cur = filter;
     const char *testcase_cur = testcase;
     const char *filter_wildcard = UTEST_NULL;
+    const char *testcase_resume = UTEST_NULL;
 
-    while (('\0' != *filter_cur) && ('\0' != *testcase_cur)) {
-      if ('*' == *filter_cur) {
-        /* store the position of the wildcard */
-        filter_wildcard = filter_cur;
-
-        /* skip the wildcard character */
+    while ('\0' != *testcase_cur) {
+      if (('*' != *filter_cur) && (*filter_cur == *testcase_cur)) {
+        /* literal match, consume a character from each */
         filter_cur++;
-
-        while (('\0' != *filter_cur) && ('\0' != *testcase_cur)) {
-          if ('*' == *filter_cur) {
-            /*
-               we found another wildcard (filter is something like *foo*) so we
-               exit the current loop, and return to the parent loop to handle
-               the wildcard case
-            */
-            break;
-          } else if (*filter_cur != *testcase_cur) {
-            /* otherwise our filter didn't match, so reset it */
-            filter_cur = filter_wildcard;
-          }
-
-          /* move testcase along */
-          testcase_cur++;
-
-          /* move filter along */
-          filter_cur++;
-        }
-
-        if (('\0' == *filter_cur) && ('\0' == *testcase_cur)) {
-          return 0;
-        }
-
-        /* if the testcase has been exhausted, we don't have a match! */
-        if ('\0' == *testcase_cur) {
-          return 1;
-        }
+        testcase_cur++;
+      } else if ('*' == *filter_cur) {
+        /* remember where to resume should the rest fail to match */
+        filter_wildcard = filter_cur++;
+        testcase_resume = testcase_cur;
+      } else if (UTEST_NULL != filter_wildcard) {
+        /* let the last wildcard swallow one more character and retry */
+        filter_cur = filter_wildcard + 1;
+        testcase_resume++;
+        testcase_cur = testcase_resume;
       } else {
-        if (*testcase_cur != *filter_cur) {
-          /* test case doesn't match filter */
-          return 1;
-        } else {
-          /* move our filter and testcase forward */
-          testcase_cur++;
-          filter_cur++;
-        }
+        /* test case doesn't match filter */
+        return 1;
       }
     }
 
-    if (('\0' != *filter_cur) ||
-        (('\0' != *testcase_cur) &&
-         ((filter == filter_cur) || ('*' != filter_cur[-1])))) {
+    /* a wildcard may stand for nothing, so any left over still match */
+    while ('*' == *filter_cur) {
+      filter_cur++;
+    }
+
+    if ('\0' != *filter_cur) {
       /* we have a mismatch! */
       return 1;
     }
@@ -1703,16 +1740,16 @@ int utest_main(int argc, const char *const argv[]) {
   }
 
   printf("%s[==========]%s Running %" UTEST_PRIu64 " test cases.\n",
-         colours[GREEN], colours[RESET], UTEST_CAST(utest_uint64_t, ran_tests));
+         colours[GREEN], colours[RESET], UTEST_UINT64_ARG(ran_tests));
 
   if (utest_state.output) {
     fprintf(utest_state.output, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     fprintf(utest_state.output,
             "<testsuites tests=\"%" UTEST_PRIu64 "\" name=\"All\">\n",
-            UTEST_CAST(utest_uint64_t, ran_tests));
+            UTEST_UINT64_ARG(ran_tests));
     fprintf(utest_state.output,
             "<testsuite name=\"Tests\" tests=\"%" UTEST_PRIu64 "\">\n",
-            UTEST_CAST(utest_uint64_t, ran_tests));
+            UTEST_UINT64_ARG(ran_tests));
   }
 
   for (index = 0; index < utest_state.tests_length; index++) {
@@ -1792,28 +1829,28 @@ int utest_main(int argc, const char *const argv[]) {
 
       if (UTEST_TEST_FAILURE == result) {
         printf("%s[  FAILED  ]%s %s (%" UTEST_PRId64 "%s)\n", colours[RED],
-               colours[RESET], utest_state.tests[index].name, time,
-               units[unit_index]);
+               colours[RESET], utest_state.tests[index].name,
+               UTEST_INT64_ARG(time), units[unit_index]);
       } else if (UTEST_TEST_SKIPPED == result) {
         printf("%s[  SKIPPED ]%s %s (%" UTEST_PRId64 "%s)\n", colours[YELLOW],
-               colours[RESET], utest_state.tests[index].name, time,
-               units[unit_index]);
+               colours[RESET], utest_state.tests[index].name,
+               UTEST_INT64_ARG(time), units[unit_index]);
       } else {
         printf("%s[       OK ]%s %s (%" UTEST_PRId64 "%s)\n", colours[GREEN],
-               colours[RESET], utest_state.tests[index].name, time,
-               units[unit_index]);
+               colours[RESET], utest_state.tests[index].name,
+               UTEST_INT64_ARG(time), units[unit_index]);
       }
     }
   }
 
   printf("%s[==========]%s %" UTEST_PRIu64 " test cases ran.\n", colours[GREEN],
-         colours[RESET], ran_tests);
+         colours[RESET], UTEST_UINT64_ARG(ran_tests));
   printf("%s[  PASSED  ]%s %" UTEST_PRIu64 " tests.\n", colours[GREEN],
-         colours[RESET], ran_tests - failed - skipped);
+         colours[RESET], UTEST_UINT64_ARG(ran_tests - failed - skipped));
 
   if (0 != skipped) {
     printf("%s[  SKIPPED ]%s %" UTEST_PRIu64 " tests, listed below:\n",
-           colours[YELLOW], colours[RESET], skipped);
+           colours[YELLOW], colours[RESET], UTEST_UINT64_ARG(skipped));
     for (index = 0; index < skipped_testcases_length; index++) {
       printf("%s[  SKIPPED ]%s %s\n", colours[YELLOW], colours[RESET],
              utest_state.tests[skipped_testcases[index]].name);
@@ -1822,7 +1859,7 @@ int utest_main(int argc, const char *const argv[]) {
 
   if (0 != failed) {
     printf("%s[  FAILED  ]%s %" UTEST_PRIu64 " tests, listed below:\n",
-           colours[RED], colours[RESET], failed);
+           colours[RED], colours[RESET], UTEST_UINT64_ARG(failed));
     for (index = 0; index < failed_testcases_length; index++) {
       printf("%s[  FAILED  ]%s %s\n", colours[RED], colours[RESET],
              utest_state.tests[failed_testcases[index]].name);
@@ -1861,7 +1898,42 @@ cleanup:
    data without having to use the UTEST_MAIN macro, thus allowing them to write
    their own main() function.
 */
+#if defined(_MSC_VER)
+#if defined(__clang__)
+#define UTEST_DEFINE_PRINTF_CLANG_BEGIN                                        \
+  _Pragma("clang diagnostic push")                                             \
+      _Pragma("clang diagnostic ignored \"-Wformat-nonliteral\"")
+#define UTEST_DEFINE_PRINTF_CLANG_END _Pragma("clang diagnostic pop")
+#else
+#define UTEST_DEFINE_PRINTF_CLANG_BEGIN
+#define UTEST_DEFINE_PRINTF_CLANG_END
+#endif
+
+#define UTEST_DEFINE_PRINTF_HELPER()                                           \
+  __pragma(warning(push)) __pragma(warning(disable : 4710))                    \
+      UTEST_DEFINE_PRINTF_CLANG_BEGIN UTEST_C_FUNC __declspec(noinline) int    \
+      utest_printf_msvc(const char *format, ...) {                             \
+    int result;                                                                \
+    va_list args;                                                              \
+    if (utest_state.output) {                                                  \
+      va_start(args, format);                                                  \
+      (void)vfprintf(utest_state.output, format, args);                        \
+      va_end(args);                                                            \
+    }                                                                          \
+    va_start(args, format);                                                    \
+    result = vfprintf(stdout, format, args);                                   \
+    va_end(args);                                                              \
+    return result;                                                             \
+  }                                                                            \
+  UTEST_DEFINE_PRINTF_CLANG_END __pragma(warning(pop))
+
+#define UTEST_STATE()                                                          \
+  struct utest_state_s utest_state = {0, 0, 0};                                \
+  UTEST_DEFINE_PRINTF_HELPER()                                                 \
+  extern int utest_state_requires_trailing_semicolon
+#else
 #define UTEST_STATE() struct utest_state_s utest_state = {0, 0, 0}
+#endif
 
 /*
    define a main() function to call into utest.h and start executing tests! A
@@ -1875,5 +1947,9 @@ cleanup:
   int main(int argc, const char *const argv[]) {                               \
     return utest_main(argc, argv);                                             \
   }
+
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 #endif /* SHEREDOM_UTEST_H_INCLUDED */
