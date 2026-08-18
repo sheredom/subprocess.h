@@ -342,6 +342,14 @@ typedef intptr_t subprocess_intptr_t;
 typedef size_t subprocess_size_t;
 #endif
 
+/* SIZE_T is ULONG_PTR, which is not size_t: on Win32 both are 32 bits wide but
+   unsigned long and unsigned int are still distinct types. */
+#ifdef _WIN64
+typedef subprocess_size_t subprocess_ulongptr_t;
+#else
+typedef unsigned long subprocess_ulongptr_t;
+#endif
+
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wreserved-identifier"
@@ -459,10 +467,10 @@ __declspec(dllimport) int __stdcall CreateProcessW(
     const subprocess_wchar_t *, LPSTARTUPINFOW, LPPROCESS_INFORMATION);
 __declspec(dllimport) int __stdcall
 InitializeProcThreadAttributeList(LPPROC_THREAD_ATTRIBUTE_LIST, unsigned long,
-                                  unsigned long, subprocess_size_t *);
+                                  unsigned long, subprocess_ulongptr_t *);
 __declspec(dllimport) int __stdcall UpdateProcThreadAttribute(
-    LPPROC_THREAD_ATTRIBUTE_LIST, unsigned long, subprocess_size_t, void *,
-    subprocess_size_t, void *, subprocess_size_t *);
+    LPPROC_THREAD_ATTRIBUTE_LIST, unsigned long, subprocess_ulongptr_t, void *,
+    subprocess_ulongptr_t, void *, subprocess_ulongptr_t *);
 __declspec(dllimport) void __stdcall
 DeleteProcThreadAttributeList(LPPROC_THREAD_ATTRIBUTE_LIST);
 __declspec(dllimport) int __stdcall MultiByteToWideChar(
@@ -809,7 +817,7 @@ int subprocess_create_ex(const char *const commandLine[], int options,
                                                     SUBPROCESS_NULL, 1};
   subprocess_wchar_t empty_environment[2] = {0, 0};
   subprocess_wchar_t *used_environment = SUBPROCESS_NULL;
-  subprocess_size_t attribute_list_size = 0;
+  subprocess_ulongptr_t attribute_list_size = 0;
   subprocess_size_t inherited_handle_count = 0;
   LPPROC_THREAD_ATTRIBUTE_LIST attribute_list = SUBPROCESS_NULL;
   void *inherited_handles[3];
