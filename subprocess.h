@@ -682,6 +682,49 @@ int subprocess_create_named_pipe_helper(void **rd, void **wr) {
 #endif
 
 #if !defined(_WIN32)
+/* Move a pipe end off 0, 1 or 2. Duplicating a descriptor onto itself is a
+   no-op, so a pipe end already sitting on a standard descriptor would keep its
+   FD_CLOEXEC and be closed by exec, leaving the child without that stream. */
+static int subprocess_fds_above_std(int fds[2]) {
+  int fd_flags;
+  int index;
+  int moved;
+  int saved_errno;
+
+  for (index = 0; index < 2; index++) {
+    if (fds[index] > STDERR_FILENO) {
+      continue;
+    }
+
+    moved = fcntl(fds[index], F_DUPFD, STDERR_FILENO + 1);
+    if (-1 != moved) {
+      fd_flags = fcntl(moved, F_GETFD, 0);
+      if ((-1 == fd_flags) ||
+          (-1 == fcntl(moved, F_SETFD, fd_flags | FD_CLOEXEC))) {
+        saved_errno = errno;
+        close(moved);
+        errno = saved_errno;
+        moved = -1;
+      }
+    }
+
+    if (-1 == moved) {
+      saved_errno = errno;
+      close(fds[0]);
+      close(fds[1]);
+      fds[0] = -1;
+      fds[1] = -1;
+      errno = saved_errno;
+      return -1;
+    }
+
+    close(fds[index]);
+    fds[index] = moved;
+  }
+
+  return 0;
+}
+
 /* Create pipes with close-on-exec set so later subprocesses do not inherit
    descriptors belonging to subprocesses which are already running. */
 static int subprocess_pipe_cloexec(int fds[2]) {
@@ -693,7 +736,7 @@ static int subprocess_pipe_cloexec(int fds[2]) {
     defined(__OpenBSD__) || defined(__DragonFly__) ||                         \
     (defined(__sun) && defined(__SVR4))
   if (0 == pipe2(fds, O_CLOEXEC)) {
-    return 0;
+    return subprocess_fds_above_std(fds);
   }
 
   /* Older kernels can lack pipe2 even when the C library declares it. */
@@ -720,7 +763,7 @@ static int subprocess_pipe_cloexec(int fds[2]) {
     }
   }
 
-  return 0;
+  return subprocess_fds_above_std(fds);
 }
 #endif
 

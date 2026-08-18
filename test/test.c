@@ -70,3 +70,55 @@ UTEST(c, create_does_not_inherit_unlisted_windows_handle) {
                 "subprocess inherited a handle outside its standard streams");
 }
 #endif
+
+UTEST(c, create_keeps_pipe_ends_off_the_standard_descriptors) {
+#if defined(_WIN32)
+  UTEST_SKIP("POSIX file-descriptor test");
+#else
+  const char *const command_line[] = {"./process_return_zero", 0};
+  struct subprocess_s process;
+  int saved[3];
+  int index;
+  int created;
+  int stdin_fd = -1;
+  int stdout_fd = -1;
+  int restored = 1;
+
+  /* With 0, 1 and 2 all free the pipes land on them, and a later dup2 onto the
+     same descriptor is a no-op that leaves FD_CLOEXEC set. */
+  for (index = 0; index < 3; index++) {
+    saved[index] = dup(index);
+    ASSERT_TRUE(0 <= saved[index]);
+  }
+  for (index = 0; index < 3; index++) {
+    close(index);
+  }
+
+  /* Nothing may assert or print until the standard descriptors are back. */
+  created = subprocess_create(command_line, 0, &process);
+  if (0 == created) {
+    if (subprocess_stdin(&process)) {
+      stdin_fd = fileno(subprocess_stdin(&process));
+    }
+    if (subprocess_stdout(&process)) {
+      stdout_fd = fileno(subprocess_stdout(&process));
+    }
+    subprocess_join(&process, 0);
+    subprocess_destroy(&process);
+  }
+
+  for (index = 0; index < 3; index++) {
+    if (-1 == dup2(saved[index], index)) {
+      restored = 0;
+    }
+    close(saved[index]);
+  }
+
+  ASSERT_TRUE(restored);
+  ASSERT_EQ(0, created);
+  EXPECT_GT_MSG(stdin_fd, STDERR_FILENO,
+                "a pipe end sits on a standard descriptor");
+  EXPECT_GT_MSG(stdout_fd, STDERR_FILENO,
+                "a pipe end sits on a standard descriptor");
+#endif
+}
