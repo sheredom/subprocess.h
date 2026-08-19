@@ -275,13 +275,46 @@ subprocess_weak int subprocess_alive(struct subprocess_s *const process);
 #include <unistd.h>
 #endif
 
+#if defined(__NetBSD__)
+#include <sys/param.h>
+#endif
+
+/* Which spelling of the chdir file action the platform provides, if any.
+   POSIX 2024 standardised posix_spawn_file_actions_addchdir; implementations
+   that shipped it earlier called it ..._np. macOS 26 and NetBSD 10 use the
+   standard name, glibc 2.29+, macOS 10.15+ and FreeBSD 13.1+ use the _np name,
+   and AIX, NetBSD 9 and older, and OpenBSD provide neither. */
+#if !defined(SUBPROCESS_ADDCHDIR_IS_POSIX)
+#if (defined(__APPLE__) && MAC_OS_X_VERSION_MIN_REQUIRED >= 260000) ||        \
+    (defined(__NetBSD__) && __NetBSD_Version__ >= 1000000000)
+#define SUBPROCESS_ADDCHDIR_IS_POSIX 1
+#else
+#define SUBPROCESS_ADDCHDIR_IS_POSIX 0
+#endif
+#endif
+
+/* Whether to launch the child with fork()+exec() instead of posix_spawn(),
+   for platforms with no posix_spawn_file_actions_addchdir under either
+   spelling: the child chdir()s before exec, and a close-on-exec pipe carries
+   exec's errno back. Define this yourself to force either implementation. */
+#if !defined(SUBPROCESS_SPAWN_VIA_FORK)
+#if defined(_AIX) || defined(__OpenBSD__) ||                                  \
+    (defined(__NetBSD__) && (__NetBSD_Version__ < 1000000000))
+#define SUBPROCESS_SPAWN_VIA_FORK 1
+#else
+#define SUBPROCESS_SPAWN_VIA_FORK 0
+#endif
+#endif
+
 /* Whether subprocess_create_ex can honour process_cwd. glibc only gained
    posix_spawn_file_actions_addchdir_np in 2.29, and macOS in 10.15; the SDKs
    mark it unavailable on iOS, tvOS and watchOS, where the undefined version
    macro folds to 0 and so answers correctly. Define this yourself to override
    the detection, for instance on musl older than 1.1.24. */
 #if !defined(SUBPROCESS_HAVE_CWD)
-#if defined(__GLIBC__)
+#if SUBPROCESS_SPAWN_VIA_FORK
+#define SUBPROCESS_HAVE_CWD 1
+#elif defined(__GLIBC__)
 #if __GLIBC_PREREQ(2, 29)
 #define SUBPROCESS_HAVE_CWD 1
 #else
@@ -294,10 +327,13 @@ subprocess_weak int subprocess_alive(struct subprocess_s *const process);
 #endif
 #endif
 
-/* Whether posix_spawn reports a failed exec back to the caller. glibc only
-   started doing so in 2.24; before that the child silently exits with 127. */
+/* Whether a failed exec is reported back to the caller. The fork() path always
+   reports it through its error pipe. glibc's posix_spawn only started doing so
+   in 2.24; before that the child silently exits with 127. */
 #if !defined(SUBPROCESS_SPAWN_REPORTS_EXEC_ERRORS)
-#if defined(__GLIBC__)
+#if SUBPROCESS_SPAWN_VIA_FORK
+#define SUBPROCESS_SPAWN_REPORTS_EXEC_ERRORS 1
+#elif defined(__GLIBC__)
 #if __GLIBC_PREREQ(2, 24)
 #define SUBPROCESS_SPAWN_REPORTS_EXEC_ERRORS 1
 #else
@@ -780,6 +816,12 @@ int subprocess_create(const char *const commandLine[], int options,
   return subprocess_create_ex(commandLine, options, SUBPROCESS_NULL,
                               SUBPROCESS_NULL, out_process);
 }
+
+#if SUBPROCESS_SPAWN_VIA_FORK
+/* Not every platform declares execvpe: AIX exports it from libc without ever
+   naming it in a header, and glibc hides it behind _GNU_SOURCE. */
+extern int execvpe(const char *, char *const *, char *const *);
+#endif
 
 int subprocess_create_ex(const char *const commandLine[], int options,
                          const char *const environment[],
@@ -1334,15 +1376,20 @@ cleanup:
   int stderrfd[2] = {-1, -1};
   int fd, fd_flags;
   int async_no_wait;
-  int actions_created = 0;
   int result = subprocess_error_unknown;
   int saved_errno = 0;
-  int posix_error;
   pid_t child = 0;
   extern char **environ;
   char *const empty_environment[1] = {SUBPROCESS_NULL};
-  posix_spawn_file_actions_t actions;
   char *const *used_environment;
+#if SUBPROCESS_SPAWN_VIA_FORK
+  /* Pipe used to relay the child's exec() errno back to the parent. */
+  int exec_errfd[2] = {-1, -1};
+#else
+  int actions_created = 0;
+  int posix_error;
+  posix_spawn_file_actions_t actions;
+#endif
 
   async_no_wait = subprocess_option_enable_async_no_wait ==
                   (options & subprocess_option_enable_async_no_wait);
@@ -1401,6 +1448,136 @@ cleanup:
     used_environment = empty_environment;
   }
 
+#if SUBPROCESS_SPAWN_VIA_FORK
+  /* fork()+exec() instead of posix_spawn, so the child can chdir() first.
+     exec_errfd[1] is close-on-exec: a successful exec closes it and the parent
+     reads EOF; a failed exec writes errno through it before _exit. */
+  if (0 != pipe(exec_errfd)) {
+    saved_errno = errno;
+    result = subprocess_error_pipe;
+    goto cleanup;
+  }
+
+  if (-1 == fcntl(exec_errfd[1], F_SETFD, FD_CLOEXEC)) {
+    saved_errno = errno;
+    result = subprocess_error_spawn;
+    goto cleanup;
+  }
+
+  child = fork();
+
+  if (child < 0) {
+    saved_errno = errno;
+    result = subprocess_error_spawn;
+    goto cleanup;
+  }
+
+  if (0 == child) {
+    /* Child. Everything below must stay async-signal-safe: after fork() in a
+       threaded process only such functions may be called before exec. */
+    int child_errno;
+
+    close(exec_errfd[0]);
+
+    if ((-1 == dup2(stdinfd[0], STDIN_FILENO)) ||
+        (-1 == dup2(stdoutfd[1], STDOUT_FILENO))) {
+      goto child_failed;
+    }
+
+    if (subprocess_option_combined_stdout_stderr ==
+        (options & subprocess_option_combined_stdout_stderr)) {
+      if (-1 == dup2(STDOUT_FILENO, STDERR_FILENO)) {
+        goto child_failed;
+      }
+    } else {
+      if (-1 == dup2(stderrfd[1], STDERR_FILENO)) {
+        goto child_failed;
+      }
+    }
+
+    /* The originals are only closed once they have been duplicated, so that a
+       pipe end that already sits on 0, 1 or 2 is not closed out from under us. */
+    if (stdinfd[0] > STDERR_FILENO) {
+      close(stdinfd[0]);
+    }
+    if (stdinfd[1] > STDERR_FILENO) {
+      close(stdinfd[1]);
+    }
+    if (stdoutfd[0] > STDERR_FILENO) {
+      close(stdoutfd[0]);
+    }
+    if (stdoutfd[1] > STDERR_FILENO) {
+      close(stdoutfd[1]);
+    }
+    if (stderrfd[0] > STDERR_FILENO) {
+      close(stderrfd[0]);
+    }
+    if (stderrfd[1] > STDERR_FILENO) {
+      close(stderrfd[1]);
+    }
+
+    if (process_cwd && (0 != chdir(process_cwd))) {
+      goto child_failed;
+    }
+
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wcast-qual"
+#pragma clang diagnostic ignored "-Wold-style-cast"
+#endif
+    if (subprocess_option_search_user_path ==
+        (options & subprocess_option_search_user_path)) {
+      execvpe(commandLine[0],
+              SUBPROCESS_CONST_CAST(char *const *, commandLine),
+              SUBPROCESS_CONST_CAST(char *const *, used_environment));
+    } else {
+      execve(commandLine[0],
+             SUBPROCESS_CONST_CAST(char *const *, commandLine),
+             SUBPROCESS_CONST_CAST(char *const *, used_environment));
+    }
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
+
+  child_failed:
+    child_errno = errno;
+    /* Nothing useful can be done if this write fails; the parent then sees EOF
+       and reports success, exactly as posix_spawn would without exec reporting. */
+    (void)!write(exec_errfd[1], &child_errno, sizeof(child_errno));
+    /* 127 is what POSIX requires posix_spawn's child to exit with when exec
+       fails, so both implementations look the same to a caller. */
+    _exit(127);
+  }
+
+  /* Parent. */
+  close(exec_errfd[1]);
+  exec_errfd[1] = -1;
+
+  {
+    int child_errno = 0;
+    ssize_t bytes_read;
+
+    do {
+      bytes_read = read(exec_errfd[0], &child_errno, sizeof(child_errno));
+    } while ((-1 == bytes_read) && (EINTR == errno));
+
+    close(exec_errfd[0]);
+    exec_errfd[0] = -1;
+
+    if (bytes_read == (ssize_t)sizeof(child_errno)) {
+      /* exec failed in the child. Reap it and surface the reason. */
+      while ((-1 == waitpid(child, SUBPROCESS_NULL, 0)) && (EINTR == errno)) {
+      }
+      child = 0;
+      saved_errno = child_errno;
+      result = subprocess_error_from_errno(child_errno);
+      if (subprocess_error_unknown == result) {
+        result = subprocess_error_spawn;
+      }
+      goto cleanup;
+    }
+  }
+#else
   posix_error = posix_spawn_file_actions_init(&actions);
   if (0 != posix_error) {
     saved_errno = posix_error;
@@ -1414,7 +1591,7 @@ cleanup:
 
   // Set working directory
   if (process_cwd) {
-#if defined(__NetBSD__) || (defined(__APPLE__) && MAC_OS_X_VERSION_MIN_REQUIRED >= 260000)
+#if SUBPROCESS_ADDCHDIR_IS_POSIX
     posix_error = posix_spawn_file_actions_addchdir(&actions, process_cwd);
 #elif !SUBPROCESS_HAVE_CWD
     posix_error = ENOSYS;
@@ -1567,6 +1744,7 @@ cleanup:
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
+#endif /* SUBPROCESS_SPAWN_VIA_FORK */
 
   // Close the stdin read end
   close(stdinfd[0]);
@@ -1641,9 +1819,21 @@ cleanup:
     result = subprocess_error_from_errno(saved_errno);
   }
 
+#if SUBPROCESS_SPAWN_VIA_FORK
+  if (-1 != exec_errfd[0]) {
+    close(exec_errfd[0]);
+    exec_errfd[0] = -1;
+  }
+
+  if (-1 != exec_errfd[1]) {
+    close(exec_errfd[1]);
+    exec_errfd[1] = -1;
+  }
+#else
   if (actions_created) {
     posix_spawn_file_actions_destroy(&actions);
   }
+#endif
 
   if (0 != result) {
     if (child) {
