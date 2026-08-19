@@ -39,6 +39,43 @@ UTEST(c, create_does_not_inherit_another_subprocess_pipe) {
 #endif
 }
 
+UTEST(c, create_gives_the_child_a_stdin_when_fd_zero_was_free) {
+#if defined(_WIN32)
+  UTEST_SKIP("POSIX file-descriptor test");
+#else
+  const char *const command_line[] = {"./process_is_fd_open", "0", 0};
+  struct subprocess_s process;
+  int saved_stdin;
+  int restored;
+  int created;
+  int joined = -1;
+  int return_code = -1;
+
+  /* With fd 0 free the stdin pipe's read end lands on it, so the child's
+     dup2 onto STDIN_FILENO becomes dup2(0, 0) -- a no-op that clears no
+     FD_CLOEXEC. */
+  saved_stdin = dup(STDIN_FILENO);
+  ASSERT_TRUE(0 <= saved_stdin);
+  ASSERT_EQ(0, close(STDIN_FILENO));
+
+  /* No assertions until stdin is back: one would return early and leave every
+     later test in this binary without a stdin. */
+  created = subprocess_create(command_line, 0, &process);
+  if (0 == created) {
+    joined = subprocess_join(&process, &return_code);
+    subprocess_destroy(&process);
+  }
+
+  restored = dup2(saved_stdin, STDIN_FILENO);
+  close(saved_stdin);
+
+  ASSERT_TRUE(0 <= restored);
+  ASSERT_EQ(0, created);
+  ASSERT_EQ(0, joined);
+  EXPECT_EQ_MSG(1, return_code, "exec closed the child's stdin");
+#endif
+}
+
 #if defined(_WIN32)
 UTEST(c, create_does_not_inherit_unlisted_windows_handle) {
   const unsigned long wait_timeout = 0x00000102;
