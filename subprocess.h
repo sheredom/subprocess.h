@@ -276,6 +276,11 @@ subprocess_weak int subprocess_alive(struct subprocess_s *const process);
 #endif
 
 #if defined(__NetBSD__)
+/* <sys/param.h> pulls in <sys/inttypes.h>, which hides the PRI macros from C++
+   before C++11 behind an include guard, so this has to be set before it. */
+#if defined(__cplusplus) && !defined(__STDC_FORMAT_MACROS)
+#define __STDC_FORMAT_MACROS 1
+#endif
 #include <sys/param.h>
 #endif
 
