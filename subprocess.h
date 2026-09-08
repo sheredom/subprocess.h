@@ -2022,9 +2022,9 @@ int subprocess_terminate(struct subprocess_s *const process) {
 #endif
 }
 
+#if defined(_WIN32)
 unsigned subprocess_read_stdout(struct subprocess_s *const process,
                                 char *const buffer, unsigned size) {
-#if defined(_WIN32)
   void *handle;
   unsigned long bytes_available = 0;
   unsigned long bytes_read = 0;
@@ -2074,6 +2074,8 @@ unsigned subprocess_read_stdout(struct subprocess_s *const process,
 
   return SUBPROCESS_CAST(unsigned, bytes_read);
 #else
+unsigned subprocess_read_stdout(struct subprocess_s *const process,
+                                char *const buffer, size_t size) {
   const int fd = fileno(process->stdout_file);
   const ssize_t bytes_read = read(fd, buffer, size);
 
