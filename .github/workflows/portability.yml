@@ -102,10 +102,50 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: freebsd, version: "14.3", pkg: "sudo pkg install -y cmake" }
-          - { os: netbsd,  version: "9.4",  pkg: "sudo pkgin -y install cmake" }
-          - { os: netbsd,  version: "10.1", pkg: "sudo pkgin -y install cmake" }
-          - { os: openbsd, version: "7.9",  pkg: "sudo pkg_add cmake" }
+          - os: freebsd
+            version: "14.3"
+            run: |
+              sudo pkg install -y cmake
+              cmake -S test -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+              cmake --build build
+              ctest --test-dir build --output-on-failure
+          # 9.x pkgsrc binaries are gone from the CDN. Build and run the full
+          # subprocess suite with base compilers to retain pre-10.0 coverage.
+          - os: netbsd
+            version: "9.4"
+            run: |
+              mkdir build
+              for source in test/process_*.c; do
+                cc -I. "$source" -o "build/$(basename "${source%.c}")"
+              done
+              cc -I. -std=gnu89 -c test/main.c -o build/main.o
+              cc -I. -std=gnu89 -c test/test.c -o build/test.o
+              cc -I. -std=c99 -c test/test99.c -o build/test99.o
+              cc -I. -std=c11 -c test/test11.c -o build/test11.o
+              c++ -I. -c test/test.cpp -o build/test-cpp.o
+              c++ -I. -std=gnu++98 -c test/test98.cpp -o build/test98.o
+              c++ -I. -std=c++11 -c test/test11.cpp -o build/test11-cpp.o
+              c++ -I. -std=c++14 -c test/test14.cpp -o build/test14.o
+              c++ -I. -std=c++17 -c test/test17.cpp -o build/test17.o
+              c++ -I. -c test/test20.cpp -o build/test20.o
+              c++ -I. -c test/pre_windows.cpp -o build/pre_windows.o
+              c++ -I. -c test/post_windows.cpp -o build/post_windows.o
+              c++ build/*.o -o build/subprocess_test
+              (cd build && ./subprocess_test)
+          - os: netbsd
+            version: "10.1"
+            run: |
+              sudo pkgin -y install cmake
+              cmake -S test -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+              cmake --build build
+              ctest --test-dir build --output-on-failure
+          - os: openbsd
+            version: "7.9"
+            run: |
+              sudo pkg_add cmake
+              cmake -S test -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+              cmake --build build
+              ctest --test-dir build --output-on-failure
     name: ${{ matrix.os }} ${{ matrix.version }}
     steps:
       - uses: actions/checkout@v4
@@ -114,10 +154,7 @@ jobs:
           operating_system: ${{ matrix.os }}
           version: ${{ matrix.version }}
           run: |
-            ${{ matrix.pkg }}
-            cmake -S test -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
-            cmake --build build
-            ctest --test-dir build --output-on-failure
+            ${{ matrix.run }}
 
   macos-deployment-target:
     runs-on: macos-latest
