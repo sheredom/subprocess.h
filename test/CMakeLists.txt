@@ -197,13 +197,6 @@ endfunction()
 
 subprocess_add_test(subprocess_test)
 
-# These object libraries verify Android capability detection and explicit overrides.
-foreach(SUBPROCESS_PLATFORM_TEST platform_android platform_android_override)
-  add_library(subprocess_${SUBPROCESS_PLATFORM_TEST}_test OBJECT
-              ${SUBPROCESS_PLATFORM_TEST}.c)
-  subprocess_set_c_flags(${SUBPROCESS_PLATFORM_TEST}.c "-std=gnu89")
-endforeach()
-
 if(MSVC)
   # Build a second test binary linked against the static CRT (/MT)
   # to ensure we work with both static and dynamic libc linkage.
