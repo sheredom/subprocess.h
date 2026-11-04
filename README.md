@@ -143,6 +143,42 @@ Note that you still can call `subprocess_destroy`, and `subprocess_join` after
 calling `subprocess_terminate`, and that the return code filled by
 `subprocess_join(&process, &process_return)` is then guaranteed to be _non zero_.
 
+### Terminating a Process When Its Parent Exits
+
+Specify `subprocess_option_terminate_on_parent_exit` when creating a process to
+terminate the child and its descendants if the parent process exits:
+
+```c
+const char *command_line[] = {"worker", NULL};
+struct subprocess_s subprocess;
+int result = subprocess_create(
+    command_line,
+    subprocess_option_search_user_path |
+        subprocess_option_terminate_on_parent_exit,
+    &subprocess);
+```
+
+On Windows 10 and later this is implemented with a kill-on-close Job Object.
+The process is associated with the job atomically during creation, before it
+can execute or spawn descendants. Creation with this option fails if the OS
+does not support process-creation job lists. On POSIX platforms the child is
+placed in a dedicated process group monitored through a pipe held by the
+parent. This deliberately keeps the parent outside the group, so terminating
+the child group cannot accidentally terminate the parent or unrelated
+processes. A POSIX descendant which explicitly starts a new session or moves
+to another process group escapes this guarantee.
+
+The grouping is intentionally opt-in. This follows the lesson from Apache
+Commons Daemon [DAEMON-232](https://issues.apache.org/jira/browse/DAEMON-232),
+which removed jsvc's unconditional `setpgrp`/`setpgid` because it broke
+supervisors that signal a logical process group. The watchdog also closes its
+own pipe writer before waiting for EOF, avoiding the parent-lifeline failure
+fixed by OpenJDK [JDK-8307990](https://bugs.openjdk.org/browse/JDK-8307990).
+
+Destroying a running subprocess created with this option also terminates its
+process group. This differs from the default behavior, where destroying a
+subprocess releases its resources without terminating it.
+
 ### Reading Asynchronously
 
 If you want to be able to read from a process _before_ calling `subprocess_join`
@@ -231,16 +267,6 @@ If you spawn a process that needs internet access then you will have to use the
 has to inherit the environment of the parent because the environment implicitly
 contains the privileges of the parent process (accessing the internet) that the
 child requires.
-
-## Todo
-
-The current list of todos:
-
-* Add the ability to
-  [set environment variables of the child process](https://github.com/sheredom/subprocess.h/issues/1)
-  as suggested by [@graphitemaster](https://github.com/graphitemaster).
-* Add the ability to specify if a child process should die if the parent process
-  is terminated.
 
 ## AI Usage
 

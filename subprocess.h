@@ -93,7 +93,13 @@ enum subprocess_option_e {
 
   // Make subprocess_read_stdout and subprocess_read_stderr return immediately
   // with 0 if no data is available. Requires subprocess_option_enable_async.
-  subprocess_option_enable_async_no_wait = 0x20
+  subprocess_option_enable_async_no_wait = 0x20,
+
+  // Terminate the child process and its descendants if the parent process
+  // exits.
+  // Destroying a running subprocess created with this option also terminates
+  // it.
+  subprocess_option_terminate_on_parent_exit = 0x40
 };
 
 // Error codes returned by subprocess_create and subprocess_create_ex.
@@ -151,6 +157,12 @@ subprocess_weak int subprocess_create(const char *const command_line[],
 ///
 /// If `options` contains `subprocess_option_inherit_environment`, then
 /// `environment` must be NULL.
+///
+/// If `options` contains `subprocess_option_terminate_on_parent_exit`, the
+/// child and descendants which remain in its process group are terminated if
+/// the parent exits. Destroying a running process created with this option has
+/// the same effect. A descendant which explicitly escapes the process group on
+/// POSIX platforms is not covered.
 subprocess_weak int
 subprocess_create_ex(const char *const command_line[], int options,
                      const char *const environment[],
@@ -203,7 +215,8 @@ subprocess_weak int subprocess_join(struct subprocess_s *const process,
 /// @return On success zero is returned.
 ///
 /// If the process to be destroyed had not finished execution, it may out live
-/// the parent process.
+/// the parent process, unless it was created with
+/// `subprocess_option_terminate_on_parent_exit`.
 subprocess_weak int subprocess_destroy(struct subprocess_s *const process);
 
 /// @brief Terminate a previously created process.
@@ -392,10 +405,31 @@ typedef unsigned long subprocess_ulongptr_t;
 #endif
 
 #ifdef __clang__
+#if __has_warning("-Wlanguage-extension-token")
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wlanguage-extension-token"
+#endif
+#endif
+
+typedef __int64 subprocess_int64_t;
+typedef unsigned __int64 subprocess_uint64_t;
+typedef subprocess_intptr_t(__stdcall *subprocess_farproc_t)(void);
+typedef int(__stdcall *subprocess_set_information_job_object_t)(
+    void *, int, void *, unsigned long);
+
+#ifdef __clang__
+#if __has_warning("-Wlanguage-extension-token")
+#pragma clang diagnostic pop
+#endif
+#endif
+
+#ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 #endif
 
+struct HINSTANCE__;
+typedef struct HINSTANCE__ *subprocess_hmodule_t;
 typedef struct _PROCESS_INFORMATION *LPPROCESS_INFORMATION;
 typedef struct _SECURITY_ATTRIBUTES *LPSECURITY_ATTRIBUTES;
 typedef struct _STARTUPINFOW *LPSTARTUPINFOW;
@@ -471,6 +505,36 @@ struct subprocess_overlapped_s {
   void *hEvent;
 };
 
+struct subprocess_jobobject_basic_limit_information_s {
+  subprocess_int64_t perProcessUserTimeLimit;
+  subprocess_int64_t perJobUserTimeLimit;
+  unsigned long limitFlags;
+  subprocess_size_t minimumWorkingSetSize;
+  subprocess_size_t maximumWorkingSetSize;
+  unsigned long activeProcessLimit;
+  subprocess_size_t affinity;
+  unsigned long priorityClass;
+  unsigned long schedulingClass;
+};
+
+struct subprocess_io_counters_s {
+  subprocess_uint64_t readOperationCount;
+  subprocess_uint64_t writeOperationCount;
+  subprocess_uint64_t otherOperationCount;
+  subprocess_uint64_t readTransferCount;
+  subprocess_uint64_t writeTransferCount;
+  subprocess_uint64_t otherTransferCount;
+};
+
+struct subprocess_jobobject_extended_limit_information_s {
+  struct subprocess_jobobject_basic_limit_information_s basicLimitInformation;
+  struct subprocess_io_counters_s ioInfo;
+  subprocess_size_t processMemoryLimit;
+  subprocess_size_t jobMemoryLimit;
+  subprocess_size_t peakProcessMemoryUsed;
+  subprocess_size_t peakJobMemoryUsed;
+};
+
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
@@ -506,6 +570,12 @@ __declspec(dllimport) int __stdcall CreateProcessW(
     const subprocess_wchar_t *, subprocess_wchar_t *, LPSECURITY_ATTRIBUTES,
     LPSECURITY_ATTRIBUTES, int, unsigned long, void *,
     const subprocess_wchar_t *, LPSTARTUPINFOW, LPPROCESS_INFORMATION);
+__declspec(dllimport) void *__stdcall CreateJobObjectW(
+    LPSECURITY_ATTRIBUTES, const subprocess_wchar_t *);
+__declspec(dllimport) subprocess_hmodule_t __stdcall
+GetModuleHandleW(const subprocess_wchar_t *);
+__declspec(dllimport) subprocess_farproc_t __stdcall
+GetProcAddress(subprocess_hmodule_t, const char *);
 __declspec(dllimport) int __stdcall
 InitializeProcThreadAttributeList(LPPROC_THREAD_ATTRIBUTE_LIST, unsigned long,
                                   unsigned long, subprocess_ulongptr_t *);
@@ -514,6 +584,7 @@ __declspec(dllimport) int __stdcall UpdateProcThreadAttribute(
     subprocess_ulongptr_t, void *, subprocess_ulongptr_t *);
 __declspec(dllimport) void __stdcall
 DeleteProcThreadAttributeList(LPPROC_THREAD_ATTRIBUTE_LIST);
+__declspec(dllimport) int __stdcall TerminateJobObject(void *, unsigned int);
 __declspec(dllimport) int __stdcall MultiByteToWideChar(
     unsigned int, unsigned long, const char *, int, subprocess_wchar_t *, int);
 __declspec(dllimport) int __stdcall CloseHandle(void *);
@@ -572,11 +643,14 @@ struct subprocess_s {
 
 #if defined(_WIN32)
   void *hProcess;
+  void *hJob;
   void *hStdInput;
   void *hEventOutput;
   void *hEventError;
 #else
   pid_t child;
+  pid_t parent_exit_watchdog;
+  int parent_lifeline;
   int return_status;
 #endif
 
@@ -847,6 +921,7 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   subprocess_size_t bs_run;
   unsigned long flags = 0;
   unsigned long last_error = 0;
+  int process_assigned_to_job = 0;
   int attribute_list_initialized = 0;
   int result = subprocess_error_unknown;
   const unsigned int codePageUtf8 = 65001;
@@ -856,7 +931,10 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   const unsigned long createNoWindow = 0x08000000;
   const unsigned long createUnicodeEnvironment = 0x00000400;
   const unsigned long extendedStartupInfoPresent = 0x00080000;
-  const subprocess_size_t procThreadAttributeHandleList = 0x00020002;
+  const unsigned long jobObjectLimitKillOnJobClose = 0x00002000;
+  const subprocess_ulongptr_t procThreadAttributeHandleList = 0x00020002;
+  const subprocess_ulongptr_t procThreadAttributeJobList = 0x0002000D;
+  const int jobObjectExtendedLimitInformation = 9;
   struct subprocess_subprocess_information_s processInfo = {SUBPROCESS_NULL,
                                                             SUBPROCESS_NULL, 0,
                                                             0};
@@ -864,10 +942,14 @@ int subprocess_create_ex(const char *const commandLine[], int options,
                                                     SUBPROCESS_NULL, 1};
   subprocess_wchar_t empty_environment[2] = {0, 0};
   subprocess_wchar_t *used_environment = SUBPROCESS_NULL;
+  subprocess_farproc_t set_information_job_object_address = SUBPROCESS_NULL;
+  subprocess_set_information_job_object_t set_information_job_object =
+      SUBPROCESS_NULL;
   subprocess_ulongptr_t attribute_list_size = 0;
   subprocess_size_t inherited_handle_count = 0;
   LPPROC_THREAD_ATTRIBUTE_LIST attribute_list = SUBPROCESS_NULL;
   void *inherited_handles[3];
+  struct subprocess_jobobject_extended_limit_information_s jobInfo;
   struct subprocess_startup_info_ex_s startInfoEx;
   struct subprocess_startup_info_s startInfo = {0,
                                                 SUBPROCESS_NULL,
@@ -904,6 +986,32 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   }
 
   memset(out_process, 0, sizeof(*out_process));
+
+  if (subprocess_option_terminate_on_parent_exit ==
+      (options & subprocess_option_terminate_on_parent_exit)) {
+    memset(&jobInfo, 0, sizeof(jobInfo));
+    jobInfo.basicLimitInformation.limitFlags = jobObjectLimitKillOnJobClose;
+
+    out_process->hJob = CreateJobObjectW(SUBPROCESS_NULL, SUBPROCESS_NULL);
+    if (!out_process->hJob) {
+      result = subprocess_error_spawn;
+      goto cleanup;
+    }
+
+    set_information_job_object_address =
+        GetProcAddress(GetModuleHandleW(L"kernel32.dll"),
+                       "SetInformationJobObject");
+    memcpy(&set_information_job_object, &set_information_job_object_address,
+           sizeof(set_information_job_object));
+    if (!set_information_job_object ||
+        !set_information_job_object(
+            out_process->hJob, jobObjectExtendedLimitInformation, &jobInfo,
+            SUBPROCESS_CAST(unsigned long, sizeof(jobInfo)))) {
+      result = subprocess_error_spawn;
+      goto cleanup;
+    }
+
+  }
 
   if (subprocess_option_inherit_environment !=
       (options & subprocess_option_inherit_environment)) {
@@ -1252,7 +1360,8 @@ int subprocess_create_ex(const char *const commandLine[], int options,
     inherited_handles[inherited_handle_count++] = startInfo.hStdError;
   }
 
-  InitializeProcThreadAttributeList(SUBPROCESS_NULL, 1, 0,
+  InitializeProcThreadAttributeList(SUBPROCESS_NULL,
+                                    out_process->hJob ? 2 : 1, 0,
                                     &attribute_list_size);
   if (0 == attribute_list_size) {
     result = subprocess_error_spawn;
@@ -1262,7 +1371,8 @@ int subprocess_create_ex(const char *const commandLine[], int options,
   attribute_list = SUBPROCESS_PTR_CAST(LPPROC_THREAD_ATTRIBUTE_LIST,
                                        _alloca(attribute_list_size));
   if (!attribute_list || !InitializeProcThreadAttributeList(
-                             attribute_list, 1, 0, &attribute_list_size)) {
+                             attribute_list, out_process->hJob ? 2 : 1, 0,
+                             &attribute_list_size)) {
     result = subprocess_error_spawn;
     goto cleanup;
   }
@@ -1274,6 +1384,17 @@ int subprocess_create_ex(const char *const commandLine[], int options,
           SUBPROCESS_NULL, SUBPROCESS_NULL)) {
     result = subprocess_error_spawn;
     goto cleanup;
+  }
+
+  if (out_process->hJob) {
+    /* Assign the process to its job atomically during creation, leaving no
+       interval in which abnormal parent exit can orphan a suspended child. */
+    if (!UpdateProcThreadAttribute(
+            attribute_list, 0, procThreadAttributeJobList, &out_process->hJob,
+            sizeof(out_process->hJob), SUBPROCESS_NULL, SUBPROCESS_NULL)) {
+      result = subprocess_error_spawn;
+      goto cleanup;
+    }
   }
 
   startInfoEx.startupInfo = startInfo;
@@ -1302,6 +1423,7 @@ int subprocess_create_ex(const char *const commandLine[], int options,
 
   DeleteProcThreadAttributeList(attribute_list);
   attribute_list_initialized = 0;
+  process_assigned_to_job = SUBPROCESS_NULL != out_process->hJob;
 
   out_process->hProcess = processInfo.hProcess;
   processInfo.hProcess = SUBPROCESS_NULL;
@@ -1369,6 +1491,12 @@ cleanup:
 
   subprocess_close_handle(&out_process->hEventOutput);
   subprocess_close_handle(&out_process->hEventError);
+
+  if (processInfo.hProcess && !process_assigned_to_job) {
+    TerminateProcess(processInfo.hProcess, 99);
+  }
+
+  subprocess_close_handle(&out_process->hJob);
   subprocess_close_handle(&processInfo.hThread);
   subprocess_close_handle(&processInfo.hProcess);
 
@@ -1379,21 +1507,30 @@ cleanup:
   int stdinfd[2] = {-1, -1};
   int stdoutfd[2] = {-1, -1};
   int stderrfd[2] = {-1, -1};
+  int lifelinefd[2] = {-1, -1};
   int fd, fd_flags;
   int async_no_wait;
   int result = subprocess_error_unknown;
   int saved_errno = 0;
+  long close_fd;
+  long max_fd;
+  ssize_t lifeline_read;
+  char lifeline_byte;
   pid_t child = 0;
+  pid_t parent_exit_watchdog = 0;
   extern char **environ;
   char *const empty_environment[1] = {SUBPROCESS_NULL};
+  sigset_t watchdog_signal_mask;
   char *const *used_environment;
 #if SUBPROCESS_SPAWN_VIA_FORK
   /* Pipe used to relay the child's exec() errno back to the parent. */
   int exec_errfd[2] = {-1, -1};
 #else
   int actions_created = 0;
+  int attributes_created = 0;
   int posix_error;
   posix_spawn_file_actions_t actions;
+  posix_spawnattr_t attributes;
 #endif
 
   async_no_wait = subprocess_option_enable_async_no_wait ==
@@ -1414,6 +1551,89 @@ cleanup:
   }
 
   memset(out_process, 0, sizeof(*out_process));
+  out_process->parent_lifeline = -1;
+
+  if (subprocess_option_terminate_on_parent_exit ==
+      (options & subprocess_option_terminate_on_parent_exit)) {
+    if (0 != subprocess_pipe_cloexec(lifelinefd)) {
+      saved_errno = errno;
+      result = subprocess_error_pipe;
+      goto cleanup;
+    }
+
+    max_fd = sysconf(_SC_OPEN_MAX);
+    if (max_fd < 0) {
+      max_fd = 1024;
+    }
+
+    // A managed child may signal its own process group. Keep those signals
+    // from accidentally removing the watchdog; SIGKILL still kills the whole
+    // group, in which case there is no managed process left to watch.
+    sigfillset(&watchdog_signal_mask);
+
+    parent_exit_watchdog = fork();
+    if (parent_exit_watchdog < 0) {
+      saved_errno = errno;
+      parent_exit_watchdog = 0;
+      result = subprocess_error_spawn;
+      goto cleanup;
+    }
+
+    if (0 == parent_exit_watchdog) {
+      // The watchdog leads a group containing only itself and the managed
+      // subprocess tree. Keeping the parent out of this group is essential:
+      // otherwise the group kill below would also kill an unrelated caller.
+      setpgid(0, 0);
+      sigprocmask(SIG_SETMASK, &watchdog_signal_mask, SUBPROCESS_NULL);
+
+      // Close the watchdog's copy of the writing end before reading. Otherwise
+      // its own descriptor would prevent EOF after the parent exits (the same
+      // failure mode fixed in OpenJDK's JDK-8307990).
+      close(lifelinefd[1]);
+
+      if (STDIN_FILENO != lifelinefd[0]) {
+        if (-1 == dup2(lifelinefd[0], STDIN_FILENO)) {
+          _exit(EXIT_FAILURE);
+        }
+        close(lifelinefd[0]);
+      }
+
+      // Do not keep arbitrary application descriptors alive in the watchdog.
+      for (close_fd = 1; close_fd < max_fd; close_fd++) {
+        close(SUBPROCESS_CAST(int, close_fd));
+      }
+
+      do {
+        lifeline_read = read(STDIN_FILENO, &lifeline_byte, 1);
+      } while ((lifeline_read < 0) && (EINTR == errno));
+
+      while (lifeline_read > 0) {
+        do {
+          lifeline_read = read(STDIN_FILENO, &lifeline_byte, 1);
+        } while ((lifeline_read < 0) && (EINTR == errno));
+      }
+
+      // EOF means every handle in the parent has closed. Kill this watchdog
+      // and every process which has remained in its dedicated process group.
+      // Verify group setup before the explicit negative-PGID kill; a failed
+      // setpgid must never fall back to killing the caller's inherited group.
+      if (getpgrp() == getpid()) {
+        kill(-getpgrp(), SIGKILL);
+      }
+      _exit(EXIT_FAILURE);
+    }
+
+    close(lifelinefd[0]);
+    lifelinefd[0] = -1;
+
+    // Do this in both processes, as recommended for race-free job-control
+    // setup. The duplicate call is harmless if the watchdog won the race.
+    if (0 != setpgid(parent_exit_watchdog, parent_exit_watchdog)) {
+      saved_errno = errno;
+      result = subprocess_error_spawn;
+      goto cleanup;
+    }
+  }
 
   if (0 != subprocess_pipe_cloexec(stdinfd)) {
     saved_errno = errno;
@@ -1483,6 +1703,14 @@ cleanup:
     int child_errno;
 
     close(exec_errfd[0]);
+
+    if (parent_exit_watchdog) {
+      if (0 != setpgid(0, parent_exit_watchdog)) {
+        goto child_failed;
+      }
+      /* The managed child must not keep the parent's lifeline end open. */
+      close(lifelinefd[1]);
+    }
 
     if ((-1 == dup2(stdinfd[0], STDIN_FILENO)) ||
         (-1 == dup2(stdoutfd[1], STDOUT_FILENO))) {
@@ -1593,6 +1821,44 @@ cleanup:
     goto cleanup;
   }
   actions_created = 1;
+
+  if (parent_exit_watchdog) {
+    posix_error = posix_spawnattr_init(&attributes);
+    if (0 != posix_error) {
+      saved_errno = posix_error;
+      result = subprocess_error_from_errno(posix_error);
+      if (subprocess_error_unknown == result) {
+        result = subprocess_error_spawn;
+      }
+      goto cleanup;
+    }
+    attributes_created = 1;
+
+    posix_error = posix_spawnattr_setpgroup(&attributes, parent_exit_watchdog);
+    if (0 == posix_error) {
+      posix_error =
+          posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETPGROUP);
+    }
+    if (0 != posix_error) {
+      saved_errno = posix_error;
+      result = subprocess_error_from_errno(posix_error);
+      if (subprocess_error_unknown == result) {
+        result = subprocess_error_spawn;
+      }
+      goto cleanup;
+    }
+
+    // The managed child must not keep the parent's side of the lifeline open.
+    posix_error = posix_spawn_file_actions_addclose(&actions, lifelinefd[1]);
+    if (0 != posix_error) {
+      saved_errno = posix_error;
+      result = subprocess_error_from_errno(posix_error);
+      if (subprocess_error_unknown == result) {
+        result = subprocess_error_spawn;
+      }
+      goto cleanup;
+    }
+  }
 
   // Set working directory
   if (process_cwd) {
@@ -1709,10 +1975,10 @@ cleanup:
 #endif
   if (subprocess_option_search_user_path ==
       (options & subprocess_option_search_user_path)) {
-    posix_error = posix_spawnp(&child, commandLine[0], &actions,
-                               SUBPROCESS_NULL,
-                               SUBPROCESS_CONST_CAST(char *const *, commandLine),
-                               used_environment);
+    posix_error = posix_spawnp(
+        &child, commandLine[0], &actions,
+        attributes_created ? &attributes : SUBPROCESS_NULL,
+        SUBPROCESS_CONST_CAST(char *const *, commandLine), used_environment);
     if (0 != posix_error) {
       saved_errno = posix_error;
       result = subprocess_error_from_errno(posix_error);
@@ -1733,10 +1999,10 @@ cleanup:
       goto cleanup;
     }
 #endif
-    posix_error = posix_spawn(&child, commandLine[0], &actions,
-                              SUBPROCESS_NULL,
-                              SUBPROCESS_CONST_CAST(char *const *, commandLine),
-                              used_environment);
+    posix_error = posix_spawn(
+        &child, commandLine[0], &actions,
+        attributes_created ? &attributes : SUBPROCESS_NULL,
+        SUBPROCESS_CONST_CAST(char *const *, commandLine), used_environment);
     if (0 != posix_error) {
       saved_errno = posix_error;
       result = subprocess_error_from_errno(posix_error);
@@ -1806,9 +2072,13 @@ cleanup:
     }
   }
 
-  // Store the child's pid
+  // Store the child's pid and ownership of its parent-exit watchdog.
   out_process->child = child;
   child = 0;
+  out_process->parent_exit_watchdog = parent_exit_watchdog;
+  parent_exit_watchdog = 0;
+  out_process->parent_lifeline = lifelinefd[1];
+  lifelinefd[1] = -1;
 
   out_process->alive = 1;
   out_process->no_wait = async_no_wait;
@@ -1838,12 +2108,28 @@ cleanup:
   if (actions_created) {
     posix_spawn_file_actions_destroy(&actions);
   }
+  if (attributes_created) {
+    posix_spawnattr_destroy(&attributes);
+  }
 #endif
+
+  if (-1 != lifelinefd[1]) {
+    close(lifelinefd[1]);
+    lifelinefd[1] = -1;
+  }
+
+  if (parent_exit_watchdog) {
+    while ((-1 == waitpid(parent_exit_watchdog, SUBPROCESS_NULL, 0)) &&
+           (EINTR == errno)) {
+    }
+    parent_exit_watchdog = 0;
+  }
 
   if (0 != result) {
     if (child) {
-      kill(child, 9);
-      waitpid(child, SUBPROCESS_NULL, 0);
+      kill(child, SIGKILL);
+      while ((-1 == waitpid(child, SUBPROCESS_NULL, 0)) && (EINTR == errno)) {
+      }
     }
 
     if (out_process->stdin_file) {
@@ -1879,6 +2165,9 @@ cleanup:
   }
   if (-1 != stderrfd[1]) {
     close(stderrfd[1]);
+  }
+  if (-1 != lifelinefd[0]) {
+    close(lifelinefd[0]);
   }
 
   if ((0 != result) && (0 != saved_errno)) {
@@ -1983,6 +2272,11 @@ int subprocess_destroy(struct subprocess_s *const process) {
   }
 
 #if defined(_WIN32)
+  if (process->hJob) {
+    CloseHandle(process->hJob);
+    process->hJob = SUBPROCESS_NULL;
+  }
+
   if (process->hProcess) {
     CloseHandle(process->hProcess);
     process->hProcess = SUBPROCESS_NULL;
@@ -1999,6 +2293,27 @@ int subprocess_destroy(struct subprocess_s *const process) {
       CloseHandle(process->hEventError);
     }
   }
+#else
+  if (-1 != process->parent_lifeline) {
+    close(process->parent_lifeline);
+    process->parent_lifeline = -1;
+  }
+
+  if (process->parent_exit_watchdog) {
+    while ((-1 == waitpid(process->parent_exit_watchdog, SUBPROCESS_NULL, 0)) &&
+           (EINTR == errno)) {
+    }
+    process->parent_exit_watchdog = 0;
+
+    if (process->child) {
+      int status;
+      while ((-1 == waitpid(process->child, &status, 0)) && (EINTR == errno)) {
+      }
+      process->child = 0;
+      process->return_status = EXIT_FAILURE;
+      process->alive = 0;
+    }
+  }
 #endif
 
   return 0;
@@ -2011,13 +2326,22 @@ int subprocess_terminate(struct subprocess_s *const process) {
   int windows_call_result;
 
   killed_process_exit_code = 99;
-  windows_call_result =
-      TerminateProcess(process->hProcess, killed_process_exit_code);
+  if (process->hJob) {
+    windows_call_result =
+        TerminateJobObject(process->hJob, killed_process_exit_code);
+  } else {
+    windows_call_result =
+        TerminateProcess(process->hProcess, killed_process_exit_code);
+  }
   success_terminate = (windows_call_result == 0) ? 1 : 0;
   return success_terminate;
 #else
   int result;
-  result = kill(process->child, 9);
+  if (process->parent_exit_watchdog) {
+    result = kill(-process->parent_exit_watchdog, SIGKILL);
+  } else {
+    result = kill(process->child, SIGKILL);
+  }
   return result;
 #endif
 }

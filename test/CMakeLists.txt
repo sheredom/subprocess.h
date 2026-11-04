@@ -64,6 +64,8 @@ set(SUBPROCESS_HELPER_SOURCES
   process_cwd.c
   process_is_fd_open.c
   process_signal_handle.c
+  process_parent_death_child.c
+  process_parent_death_parent.c
 )
 
 foreach(SUBPROCESS_HELPER_SOURCE ${SUBPROCESS_HELPER_SOURCES})
